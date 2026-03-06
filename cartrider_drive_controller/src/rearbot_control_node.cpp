@@ -13,14 +13,14 @@ public:
   RearbotControlNode()
   : Node("rearbot_control_node")
   {
-    double r = this->declare_parameter<double>("wheel_radius");
-    double L = this->declare_parameter<double>("wheel_separation");
-    double max_w = this->declare_parameter<double>("max_wheel_w");
+    r_ = this->declare_parameter<double>("wheel_radius");
+    L_ = this->declare_parameter<double>("wheel_separation");
+    max_w_ = this->declare_parameter<double>("max_wheel_w");
 
     left_id_ = this->declare_parameter<int>("left_motor_id");
     right_id_ = this->declare_parameter<int>("right_motor_id");
 
-    diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(r, L, max_w);
+    diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(r_, L_, max_w_);
 
     cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
         "cmd_vel", 
@@ -37,7 +37,7 @@ private:
   {
     auto output = diff_->compute(msg->linear.x, msg->angular.z);
 
-    double left_rpm = -output.left_w  * 60.0 / (2.0 * M_PI);
+    double left_rpm = -output.left_w * 60.0 / (2.0 * M_PI);
     double right_rpm = output.right_w * 60.0 / (2.0 * M_PI);
 
     RCLCPP_INFO(this->get_logger(),
@@ -65,6 +65,10 @@ private:
   }
 
   std::unique_ptr<vehicle_kinematics::DifferentialDrive> diff_;
+
+  double r_;
+  double L_;
+  double max_w_;
 
   int left_id_;  
   int right_id_;  

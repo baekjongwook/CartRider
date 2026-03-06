@@ -1,3 +1,6 @@
+// Rearbot Odom Node
+// 2026.03.05 백종욱
+
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
