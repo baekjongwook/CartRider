@@ -15,7 +15,7 @@ def generate_launch_description():
     )
 
     teleop_node = Node(
-        package='cartrider_control',
+        package='cartrider_drive_controller',
         executable='teleop_joystick', 
         name='teleop_joystick',
         output='screen'
