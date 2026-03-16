@@ -11,7 +11,7 @@
 #include <algorithm>
 
 #define LIN_STEP 0.01
-#define ANG_STEP 0.05
+#define ANG_STEP 0.01
 
 #define MAX_LIN 1.0
 #define MAX_ANG 3.0

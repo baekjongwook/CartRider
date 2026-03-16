@@ -61,9 +61,21 @@ ament_target_dependencies(teleop_keyboard
   geometry_msgs
 )
 
+add_executable(teleop_joystick
+  src/teleop_joystick.cpp
+)
+
+ament_target_dependencies(teleop_joystick
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+)
+
 install(TARGETS
   rearbot_control_node
+  rearbot_odom_node
   teleop_keyboard
+  teleop_joystick
   DESTINATION lib/${PROJECT_NAME}
 )
 
