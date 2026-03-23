@@ -15,12 +15,11 @@ public:
   {
     r_ = this->declare_parameter<double>("wheel_radius");
     L_ = this->declare_parameter<double>("wheel_separation");
-    max_w_ = this->declare_parameter<double>("max_wheel_w");
 
     left_id_ = this->declare_parameter<int>("left_motor_id");
     right_id_ = this->declare_parameter<int>("right_motor_id");
 
-    diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(r_, L_, max_w_);
+    diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(r_, L_);
 
     cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
         "cmd_vel", 
@@ -68,7 +67,6 @@ private:
 
   double r_;
   double L_;
-  double max_w_;
 
   int left_id_;  
   int right_id_;  

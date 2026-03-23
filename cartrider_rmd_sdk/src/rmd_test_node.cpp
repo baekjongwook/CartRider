@@ -139,24 +139,23 @@ private:
 
       YAML::Node params = config["hardware_node"]["ros__parameters"];
 
-      motor_ids_     = params["motor_ids"].as<std::vector<int64_t>>();
+      motor_ids_ = params["motor_ids"].as<std::vector<int64_t>>();
       operate_modes_ = params["operate_modes"].as<std::vector<std::string>>();
 
-      current_min_   = params["current_min"].as<std::vector<double>>();
-      current_max_   = params["current_max"].as<std::vector<double>>();
+      current_min_ = params["current_min"].as<std::vector<double>>();
+      current_max_ = params["current_max"].as<std::vector<double>>();
 
-      speed_min_     = params["speed_min"].as<std::vector<double>>();
-      speed_max_     = params["speed_max"].as<std::vector<double>>();
+      speed_min_ = params["speed_min"].as<std::vector<double>>();
+      speed_max_ = params["speed_max"].as<std::vector<double>>();
 
-      position_min_  = params["position_min"].as<std::vector<double>>();
-      position_max_  = params["position_max"].as<std::vector<double>>();
+      position_min_ = params["position_min"].as<std::vector<double>>();
+      position_max_ = params["position_max"].as<std::vector<double>>();
 
       validateParameters();
     }
     catch (const std::exception & e)
     {
-      RCLCPP_FATAL(this->get_logger(),
-                   "Failed to load motors.yaml: %s", e.what());
+      RCLCPP_FATAL(this->get_logger(), "Failed to load motors.yaml: %s", e.what());
       throw;
     }
   }
@@ -225,11 +224,8 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<RmdTestNode>();
-
   std::thread input_thread([&]() {node->run();});
-
   rclcpp::spin(node);
-
   rclcpp::shutdown();
 
   if (input_thread.joinable())

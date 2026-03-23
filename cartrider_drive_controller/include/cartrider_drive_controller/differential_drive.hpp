@@ -26,8 +26,8 @@ struct ForwardOutput
 class DifferentialDrive
 {
 public:
-    DifferentialDrive(double wheel_radius, double wheel_separation, double max_wheel_angular_vel)
-    : wheel_radius_(wheel_radius), wheel_separation_(wheel_separation), max_wheel_w_(max_wheel_angular_vel)
+    DifferentialDrive(double wheel_radius, double wheel_separation)
+    : wheel_radius_(wheel_radius), wheel_separation_(wheel_separation)
     {}
 
     DifferentialOutput compute(double linear_vel, double angular_vel) const
@@ -37,9 +37,6 @@ public:
 
         double w_left  = v_left  / wheel_radius_;
         double w_right = v_right / wheel_radius_;
-
-        w_left  = std::clamp(w_left,  -max_wheel_w_, max_wheel_w_);
-        w_right = std::clamp(w_right, -max_wheel_w_, max_wheel_w_);
 
         return {w_left, w_right};
     }
@@ -58,8 +55,6 @@ public:
 private:
     double wheel_radius_;
     double wheel_separation_;
-    double max_wheel_w_; 
-
 };
 
 }

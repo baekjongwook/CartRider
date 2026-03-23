@@ -2,7 +2,6 @@
   ros__parameters:
     wheel_radius: 0.11 # m
     wheel_separation: 0.295 # m
-    max_wheel_w: 5.0 # rad/s
 
     left_motor_id: 1
     right_motor_id: 2
