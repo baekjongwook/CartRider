@@ -36,16 +36,15 @@ private:
   {
     auto output = diff_->compute(msg->linear.x, msg->angular.z);
 
-    double left_rpm = -output.left_w * 60.0 / (2.0 * M_PI);
-    double right_rpm = output.right_w * 60.0 / (2.0 * M_PI);
+    double left_radps = -output.left_w;
+    double right_radps = output.right_w;
 
     RCLCPP_INFO(this->get_logger(),
-              "cmd_vel: v=%.3f  w=%.3f  ->  left RPM=%.3f  right RPM=%.3f",
-              msg->linear.x,
-              msg->angular.z,
-              left_rpm,
-              right_rpm);
-
+        "cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
+        msg->linear.x,
+        msg->angular.z,
+        left_radps,
+        right_radps);
 
     cartrider_rmd_sdk::msg::MotorCommandArray cmd;
 
