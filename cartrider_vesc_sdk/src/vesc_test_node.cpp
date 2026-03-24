@@ -1,137 +1,223 @@
-#include <rclcpp/rclcpp.hpp>
+// VESC Test Node
+// 2026.03.24 백종욱
 
-#include <linux/can.h>
-#include <linux/can/raw.h>
-#include <sys/socket.h>
-#include <net/if.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <cstring>
+#include <rclcpp/rclcpp.hpp>
+#include "cartrider_vesc_sdk/msg/motor_command_array.hpp"
+
+#include <yaml-cpp/yaml.h>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include <iostream>
+#include <vector>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+#include <limits>
+#include <string>
 
 class VescTestNode : public rclcpp::Node
 {
 public:
   VescTestNode() : Node("vesc_test_node")
   {
-    if (!initCAN("can0"))
-    {
-      RCLCPP_FATAL(this->get_logger(), "CAN init failed");
-      throw std::runtime_error("CAN init failed");
-    }
+    loadYamlConfig();
 
-    RCLCPP_INFO(this->get_logger(), "VESC Test Node Started (RPM Mode)");
+    command_pub_ = this->create_publisher<cartrider_vesc_sdk::msg::MotorCommandArray>("vesc_command", 10);
 
-    timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(20),
-      std::bind(&VescTestNode::loop, this)
-    );
-
-    input_thread_ = std::thread(&VescTestNode::inputLoop, this);
+    pub_thread_ = std::thread(&VescTestNode::publishLoop, this);
   }
 
   ~VescTestNode()
   {
     running_ = false;
-
-    if (input_thread_.joinable())
-      input_thread_.join();
-
-    close(socket_);
+    if (pub_thread_.joinable())
+      pub_thread_.join();
   }
 
-private:
-
-  bool initCAN(const std::string& interface)
+  void run()
   {
-    struct ifreq ifr;
-    struct sockaddr_can addr;
-
-    socket_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    if (socket_ < 0) return false;
-
-    std::strcpy(ifr.ifr_name, interface.c_str());
-    if (ioctl(socket_, SIOCGIFINDEX, &ifr) < 0)
-      return false;
-
-    addr.can_family = AF_CAN;
-    addr.can_ifindex = ifr.ifr_ifindex;
-
-    if (bind(socket_, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-      return false;
-
-    return true;
-  }
-
-  void sendRPM(int id, int32_t erpm)
-  {
-    struct can_frame frame;
-
-    frame.can_id = ((0x03 << 8) | id) | CAN_EFF_FLAG; 
-    frame.can_dlc = 4;
-
-    frame.data[0] = (erpm >> 24) & 0xFF;
-    frame.data[1] = (erpm >> 16) & 0xFF;
-    frame.data[2] = (erpm >> 8) & 0xFF;
-    frame.data[3] = erpm & 0xFF;
-
-    write(socket_, &frame, sizeof(frame));
-  }
-
-  void loop()
-  {
-    int32_t erpm_copy;
-
+    while (rclcpp::ok() && running_)
     {
-      std::lock_guard<std::mutex> lock(mutex_);
-      erpm_copy = erpm_;
-    }
+      cartrider_vesc_sdk::msg::MotorCommandArray msg;
 
-    sendRPM(1, erpm_copy); 
-  }
-
-  void inputLoop()
-  {
-    while (running_)
-    {
-      float wheel_rpm;
-
-      std::cout << "\nEnter wheel RPM (-100 ~ 100): ";
-      std::cin >> wheel_rpm;
-
-      if (!std::cin)
+      for (size_t i = 0; i < motor_ids_.size(); ++i)
       {
-        std::cin.clear();
-        std::cin.ignore(10000, '\n');
-        std::cout << "Invalid input\n";
-        continue;
+        int id = static_cast<int>(motor_ids_[i]);
+        const std::string & mode = operate_modes_[i];
+
+        double target = 0.0;
+
+        std::cout << "\nMotor " << id << " (";
+
+        if (mode == "current")
+        {
+          std::cout << "current mode)\n";
+          std::cout << "  Enter target current [A] (" << current_min_[i] << " ~ " << current_max_[i] << "): ";
+
+          std::cin >> target;
+
+          if (!std::cin)
+          {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            RCLCPP_WARN(get_logger(), "Invalid input. Try again.");
+            --i;
+            continue;
+          }
+
+          target = std::clamp(target, current_min_[i], current_max_[i]);
+        }
+        else if (mode == "speed")
+        {
+          std::cout << "speed mode)\n";
+          std::cout << "  Enter target speed [RPM] (" << speed_min_[i] << " ~ " << speed_max_[i] << "): ";
+
+          std::cin >> target;
+
+          if (!std::cin)
+          {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            RCLCPP_WARN(get_logger(), "Invalid input. Try again.");
+            --i;
+            continue;
+          }
+
+          target = std::clamp(target, speed_min_[i], speed_max_[i]);
+
+          if (std::abs(target) < speed_deadzone_[i])
+            target = 0.0;
+        }
+        else if (mode == "position")
+        {
+          std::cout << "position mode)\n";
+          std::cout << "  Enter target position [DEG] (" << position_min_[i] << " ~ " << position_max_[i] << "): ";
+
+          std::cin >> target;
+
+          if (!std::cin)
+          {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            RCLCPP_WARN(get_logger(), "Invalid input. Try again.");
+            --i;
+            continue;
+          }
+
+          target = std::clamp(target, position_min_[i], position_max_[i]);
+        }
+
+        cartrider_vesc_sdk::msg::MotorCommand cmd;
+        cmd.id = id;
+        cmd.target = target;
+
+        msg.commands.push_back(cmd);
       }
 
-      wheel_rpm = std::clamp(wheel_rpm, -100.0f, 100.0f);
-
-      int32_t erpm = static_cast<int32_t>(wheel_rpm * 140.0f);
+      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        erpm_ = erpm;
+        current_msg_ = msg;
       }
 
-      std::cout << "Set wheel RPM: " << wheel_rpm << " → ERPM: " << erpm << std::endl;
+      RCLCPP_INFO(get_logger(), "Command updated.");
     }
   }
 
-  int socket_;
-  rclcpp::TimerBase::SharedPtr timer_;
+private:
+  void loadYamlConfig()
+  {
+    try
+    {
+      std::string pkg_share = ament_index_cpp::get_package_share_directory("cartrider_vesc_sdk");
+      std::string yaml_path = pkg_share + "/param/motors.yaml";
 
-  std::thread input_thread_;
+      YAML::Node config = YAML::LoadFile(yaml_path);
+      YAML::Node params = config["hardware_node"]["ros__parameters"];
+
+      motor_ids_ = params["motor_ids"].as<std::vector<int64_t>>();
+      operate_modes_ = params["operate_modes"].as<std::vector<std::string>>();
+
+      current_min_ = params["current_min"].as<std::vector<double>>();
+      current_max_ = params["current_max"].as<std::vector<double>>();
+
+      speed_min_ = params["speed_min"].as<std::vector<double>>();
+      speed_max_ = params["speed_max"].as<std::vector<double>>();
+      speed_deadzone_ = params["speed_deadzone"].as<std::vector<double>>();
+
+      position_min_ = params["position_min"].as<std::vector<double>>();
+      position_max_ = params["position_max"].as<std::vector<double>>();
+
+      validateParameters();
+    }
+    catch (const std::exception & e)
+    {
+      RCLCPP_FATAL(this->get_logger(), "Failed to load motors.yaml: %s", e.what());
+      throw;
+    }
+  }
+
+  void validateParameters()
+  {
+    const size_t n = motor_ids_.size();
+
+    if (n == 0)
+      throw std::runtime_error("No motor_ids defined in YAML.");
+
+    if (operate_modes_.size() != n ||
+        current_min_.size() != n ||
+        current_max_.size() != n ||
+        speed_min_.size() != n ||
+        speed_max_.size() != n ||
+        speed_deadzone_.size() != n ||
+        position_min_.size() != n ||
+        position_max_.size() != n)
+    {
+      throw std::runtime_error("Parameter size mismatch in YAML.");
+    }
+  }
+
+  void publishLoop()
+  {
+    rclcpp::Rate rate(10);
+
+    while (rclcpp::ok() && running_)
+    {
+      cartrider_vesc_sdk::msg::MotorCommandArray msg_copy;
+
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        msg_copy = current_msg_;
+      }
+
+      if (!msg_copy.commands.empty())
+        command_pub_->publish(msg_copy);
+
+      rate.sleep();
+    }
+  }
+
+  rclcpp::Publisher<cartrider_vesc_sdk::msg::MotorCommandArray>::SharedPtr command_pub_;
+
+  std::vector<int64_t> motor_ids_;
+  std::vector<std::string> operate_modes_;
+
+  std::vector<double> current_min_;
+  std::vector<double> current_max_;
+
+  std::vector<double> speed_min_;
+  std::vector<double> speed_max_;
+  std::vector<double> speed_deadzone_;
+
+  std::vector<double> position_min_;
+  std::vector<double> position_max_;
+
+  cartrider_vesc_sdk::msg::MotorCommandArray current_msg_;
   std::mutex mutex_;
 
-  int32_t erpm_ = 0;
+  std::thread pub_thread_;
   std::atomic<bool> running_{true};
 };
 
@@ -139,7 +225,12 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<VescTestNode>();
+  std::thread input_thread([&]() { node->run(); });
   rclcpp::spin(node);
   rclcpp::shutdown();
+
+  if (input_thread.joinable())
+    input_thread.join();
+
   return 0;
 }
