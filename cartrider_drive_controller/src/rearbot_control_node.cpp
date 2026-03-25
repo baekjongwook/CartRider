@@ -3,6 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include "cartrider_rmd_sdk/msg/motor_command_array.hpp"
 
 #include "cartrider_drive_controller/differential_drive.hpp"
@@ -26,21 +27,84 @@ public:
         10,
         std::bind(&RearbotControlNode::cmdCallback, this, std::placeholders::_1));
 
+    cmd_joy_sub_ = create_subscription<geometry_msgs::msg::Twist>(
+        "cmd_vel_joy", 
+        10,
+        std::bind(&RearbotControlNode::cmdjoyCallback, this, std::placeholders::_1));
+
+    joy_sig_sub_ = create_subscription<std_msgs::msg::Bool>(
+        "joy_control_sig",
+        10,
+        std::bind(&RearbotControlNode::joySigCallback, this, std::placeholders::_1));
+
+        
     command_pub_ = create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>(
         "rmd_command", 
         10);
+
+    RCLCPP_INFO(this->get_logger(), "Rearbot Control Node Started. Default Mode: JOYSTICK");
   }
 
 private:
+  bool joy_mode_active_ = true;
+
+  void joySigCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    joy_mode_active_ = msg->data;
+    
+    if (joy_mode_active_) {
+        RCLCPP_INFO(this->get_logger(), "Control Mode Switched: [ JOYSTICK ]");
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Control Mode Switched: [ NAVIGATION ]");
+    }
+  }
+
   void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
   {
+    if (joy_mode_active_) {
+        return;
+    }
     auto output = diff_->compute(msg->linear.x, msg->angular.z);
 
     double left_radps = -output.left_w;
     double right_radps = output.right_w;
 
     RCLCPP_INFO(this->get_logger(),
-        "cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
+        "[NAV]cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
+        msg->linear.x,
+        msg->angular.z,
+        left_radps,
+        right_radps);
+
+    cartrider_rmd_sdk::msg::MotorCommandArray cmd;
+
+    cartrider_rmd_sdk::msg::MotorCommand left_cmd;
+    left_cmd.id = left_id_;
+    left_cmd.target = -output.left_w;
+
+    cartrider_rmd_sdk::msg::MotorCommand right_cmd;
+    right_cmd.id = right_id_;
+    right_cmd.target = output.right_w;
+
+    cmd.commands.push_back(left_cmd);
+    cmd.commands.push_back(right_cmd);
+
+    command_pub_->publish(cmd);
+  }
+
+  void cmdjoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+  {
+    if (!joy_mode_active_) {
+        return;
+    }
+
+    auto output = diff_->compute(msg->linear.x, msg->angular.z);
+
+    double left_radps = -output.left_w;
+    double right_radps = output.right_w;
+
+    RCLCPP_INFO(this->get_logger(),
+        "[JOY]cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
         msg->linear.x,
         msg->angular.z,
         left_radps,
@@ -71,6 +135,8 @@ private:
   int right_id_;  
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_; 
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_joy_sub_; 
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
   rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr command_pub_; 
 };
 
