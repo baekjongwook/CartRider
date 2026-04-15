@@ -9,7 +9,7 @@
 #include <iostream>
 
 #define MAX_LIN 2.0
-#define MAX_ANG 1.0
+#define MAX_ANG 0.5
 
 class Teleop : public rclcpp::Node
 {
