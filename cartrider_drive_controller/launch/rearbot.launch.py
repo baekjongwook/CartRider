@@ -29,7 +29,8 @@ def generate_launch_description():
     rmd_launch = os.path.join(rmd_pkg_share, 'launch', 'bringup.launch.py')
 
     rmd_bringup = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(rmd_launch)
+        PythonLaunchDescriptionSource(rmd_launch),
+        launch_arguments={'can_interface': 'can_rear_rmd'}.items()
     )
 
     return LaunchDescription([

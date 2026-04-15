@@ -15,6 +15,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(cartrider_rmd_sdk REQUIRED)
+find_package(cartrider_vesc_sdk REQUIRED)
 
 add_executable(rearbot_control_node
   src/rearbot_control_node.cpp
@@ -30,6 +31,23 @@ ament_target_dependencies(rearbot_control_node
   sensor_msgs
   geometry_msgs
   cartrider_rmd_sdk 
+)
+
+add_executable(frontbot_control_node
+  src/frontbot_control_node.cpp
+)
+
+target_include_directories(frontbot_control_node PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+ament_target_dependencies(frontbot_control_node
+  rclcpp
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  cartrider_rmd_sdk 
+  cartrider_vesc_sdk
 )
 
 add_executable(rearbot_odom_node
@@ -73,6 +91,7 @@ ament_target_dependencies(teleop_joystick
 
 install(TARGETS
   rearbot_control_node
+  frontbot_control_node
   rearbot_odom_node
   teleop_keyboard
   teleop_joystick

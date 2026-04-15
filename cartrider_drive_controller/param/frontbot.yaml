@@ -1,0 +1,12 @@
+/**:
+  ros__parameters:
+    wheel_radius: 0.0635 # m
+    track_width: 0.265 # m
+    wheel_base: 0.260 # m
+
+    gear_ratio: 3.0
+
+    left_motor_id: 1
+    right_motor_id: 2
+    yaw_left_motor_id: 3
+    yaw_right_motor_id: 4
