@@ -33,23 +33,6 @@ ament_target_dependencies(rearbot_control_node
   cartrider_rmd_sdk 
 )
 
-add_executable(frontbot_control_node
-  src/frontbot_control_node.cpp
-)
-
-target_include_directories(frontbot_control_node PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-ament_target_dependencies(frontbot_control_node
-  rclcpp
-  std_msgs
-  sensor_msgs
-  geometry_msgs
-  cartrider_rmd_sdk 
-  cartrider_vesc_sdk
-)
-
 add_executable(rearbot_odom_node
   src/rearbot_odom_node.cpp
 )
@@ -68,6 +51,34 @@ ament_target_dependencies(rearbot_odom_node
   tf2_ros
   tf2_geometry_msgs
   cartrider_rmd_sdk 
+)
+
+
+add_executable(frontbot_control_node
+  src/frontbot_control_node.cpp
+)
+
+target_include_directories(frontbot_control_node PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+ament_target_dependencies(frontbot_control_node
+  rclcpp
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  cartrider_rmd_sdk 
+  cartrider_vesc_sdk
+)
+
+add_executable(frontbot_test_node
+  src/frontbot_test_node.cpp
+)
+
+ament_target_dependencies(frontbot_test_node
+  rclcpp
+  cartrider_rmd_sdk
+  cartrider_vesc_sdk
 )
 
 add_executable(teleop_keyboard
@@ -91,8 +102,9 @@ ament_target_dependencies(teleop_joystick
 
 install(TARGETS
   rearbot_control_node
-  frontbot_control_node
   rearbot_odom_node
+  frontbot_control_node
+  frontbot_test_node
   teleop_keyboard
   teleop_joystick
   DESTINATION lib/${PROJECT_NAME}
@@ -108,6 +120,11 @@ install(DIRECTORY launch/
 
 install(DIRECTORY param/
   DESTINATION share/${PROJECT_NAME}/param
+)
+
+install(PROGRAMS
+  scripts/frontbot_state_plotter.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()

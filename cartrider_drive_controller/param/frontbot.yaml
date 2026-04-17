@@ -18,7 +18,7 @@
 
     vesc_position_min: [-75.0, -75.0] #degree
     vesc_position_max: [60.0, 60.0]
-    vesc_position_zero_offset: [295.0, 290.0]
+    vesc_position_zero_offset: [295.0, 287.0]
 
     wheel_radius: 0.0635 # m
     track_width: 0.265 # m

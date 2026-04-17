@@ -1,0 +1,23 @@
+joy_node:
+  ros__parameters:
+    deadzone: 0.05
+    autorepeat_rate: 20.0
+
+teleop_joystick:
+  ros__parameters:
+    robot_type: "frontbot"
+
+    rearbot_max_lin: 0.5
+    rearbot_max_ang: 0.2
+
+    frontbot_diff_max_lin: 0.2
+    frontbot_diff_max_ang: 1.0
+
+    frontbot_ack_max_lin: 0.1
+    frontbot_ack_max_ang: 0.1
+
+    linear_axis_index: 1
+    angular_axis_index: 3
+
+    x_button_index: 0
+    ps_button_index: 10
