@@ -71,7 +71,7 @@ public:
           }
 
           user_input_value = std::clamp(user_input_value, current_min_[i], current_max_[i]);
-          target_si = user_input_value; // A -> A
+          target_si = user_input_value;
         }
         else if (mode == "speed")
         {
@@ -95,7 +95,7 @@ public:
           if (std::abs(user_input_value) < speed_deadzone_rpm_[i])
             user_input_value = 0.0;
 
-          target_si = rpmToRadps(user_input_value); // RPM -> rad/s
+          target_si = rpmToRadps(user_input_value);
         }
         else if (mode == "position")
         {
@@ -117,7 +117,7 @@ public:
           user_input_value =
               std::clamp(user_input_value, position_min_deg_[i], position_max_deg_[i]);
 
-          target_si = degToRad(user_input_value); // DEG -> rad
+          target_si = degToRad(user_input_value);
         }
         else
         {
@@ -169,18 +169,18 @@ private:
       YAML::Node config = YAML::LoadFile(yaml_path);
       YAML::Node params = config["hardware_node"]["ros__parameters"];
 
-      motor_ids_ = params["motor_ids"].as<std::vector<int64_t>>();
-      operate_modes_ = params["operate_modes"].as<std::vector<std::string>>();
+      motor_ids_ = params["vesc_motor_ids"].as<std::vector<int64_t>>();
+      operate_modes_ = params["vesc_operate_modes"].as<std::vector<std::string>>();
 
-      current_min_ = params["current_min"].as<std::vector<double>>();
-      current_max_ = params["current_max"].as<std::vector<double>>();
+      current_min_ = params["vesc_current_min"].as<std::vector<double>>();
+      current_max_ = params["vesc_current_max"].as<std::vector<double>>();
 
-      speed_min_rpm_ = params["speed_min"].as<std::vector<double>>();
-      speed_max_rpm_ = params["speed_max"].as<std::vector<double>>();
-      speed_deadzone_rpm_ = params["speed_deadzone"].as<std::vector<double>>();
+      speed_min_rpm_ = params["vesc_speed_min"].as<std::vector<double>>();
+      speed_max_rpm_ = params["vesc_speed_max"].as<std::vector<double>>();
+      speed_deadzone_rpm_ = params["vesc_speed_deadzone"].as<std::vector<double>>();
 
-      position_min_deg_ = params["position_min"].as<std::vector<double>>();
-      position_max_deg_ = params["position_max"].as<std::vector<double>>();
+      position_min_deg_ = params["vesc_position_min"].as<std::vector<double>>();
+      position_max_deg_ = params["vesc_position_max"].as<std::vector<double>>();
 
       validateParameters();
     }
@@ -196,7 +196,7 @@ private:
     const size_t n = motor_ids_.size();
 
     if (n == 0)
-      throw std::runtime_error("No motor_ids defined in YAML.");
+      throw std::runtime_error("No vesc_motor_ids defined in YAML.");
 
     if (operate_modes_.size() != n ||
         current_min_.size() != n ||

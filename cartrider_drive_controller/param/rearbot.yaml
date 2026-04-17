@@ -1,7 +1,14 @@
 /**:
   ros__parameters:
+
+    rmd_can_interface: "can_rear_rmd"
+    rmd_motor_ids: [1, 2]
+    rmd_operate_modes: ["speed", "speed"]   # current, speed, position
+    rmd_gear_ratio: [1.0, 1.0]
+
+    rmd_speed_min: [-40.0, -40.0] # RPM
+    rmd_speed_max: [40.0, 40.0]
+    rmd_speed_deadzone: [3.0, 3.0]
+
     wheel_radius: 0.11 # m
     track_width: 0.295 # m
-
-    left_motor_id: 1
-    right_motor_id: 2

@@ -17,8 +17,20 @@ public:
     r_ = this->declare_parameter<double>("wheel_radius");
     L_ = this->declare_parameter<double>("track_width");
 
-    left_id_ = this->declare_parameter<int>("left_motor_id");
-    right_id_ = this->declare_parameter<int>("right_motor_id");
+    rmd_motor_ids_ =
+        this->declare_parameter<std::vector<int64_t>>("rmd_motor_ids", std::vector<int64_t>{});
+
+    if (rmd_motor_ids_.size() != 2)
+    {
+      RCLCPP_FATAL(
+          this->get_logger(),
+          "Parameter 'rmd_motor_ids' must contain exactly 2 elements. Got %zu",
+          rmd_motor_ids_.size());
+      throw std::runtime_error("Invalid rmd_motor_ids size");
+    }
+
+    left_id_ = static_cast<int>(rmd_motor_ids_[0]);
+    right_id_ = static_cast<int>(rmd_motor_ids_[1]);
 
     diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(r_, L_);
 
@@ -51,6 +63,8 @@ private:
 
   double r_{0.0};
   double L_{0.0};
+
+  std::vector<int64_t> rmd_motor_ids_;
 
   int left_id_{0};
   int right_id_{0};

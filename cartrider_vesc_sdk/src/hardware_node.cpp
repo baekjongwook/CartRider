@@ -121,27 +121,28 @@ HardwareNode::HardwareNode()
 {
   RCLCPP_INFO(this->get_logger(), "Hardware Node Started");
 
-  this->declare_parameter("can_interface", "can0");
+  this->declare_parameter("vesc_can_interface", "can0");
   this->declare_parameter("command_timeout_ms", 2000);
 
-  this->declare_parameter("motor_ids", std::vector<int64_t>{});
-  this->declare_parameter("operate_modes", std::vector<std::string>{});
+  this->declare_parameter("vesc_motor_ids", std::vector<int64_t>{});
+  this->declare_parameter("vesc_operate_modes", std::vector<std::string>{});
 
-  this->declare_parameter("current_min", std::vector<double>{});
-  this->declare_parameter("current_max", std::vector<double>{});
+  this->declare_parameter("vesc_current_min", std::vector<double>{});
+  this->declare_parameter("vesc_current_max", std::vector<double>{});
 
-  this->declare_parameter("speed_min", std::vector<double>{});
-  this->declare_parameter("speed_max", std::vector<double>{});
-  this->declare_parameter("speed_deadzone", std::vector<double>{});
+  this->declare_parameter("vesc_speed_min", std::vector<double>{});
+  this->declare_parameter("vesc_speed_max", std::vector<double>{});
+  this->declare_parameter("vesc_speed_deadzone", std::vector<double>{});
 
-  this->declare_parameter("position_min", std::vector<double>{});
-  this->declare_parameter("position_max", std::vector<double>{});
-  this->declare_parameter("position_zero_offset", std::vector<double>{});
+  this->declare_parameter("vesc_position_min", std::vector<double>{});
+  this->declare_parameter("vesc_position_max", std::vector<double>{});
+  this->declare_parameter("vesc_position_zero_offset", std::vector<double>{});
 
-  this->declare_parameter("pole_pairs", std::vector<int64_t>{});
-  this->declare_parameter("gear_ratios", std::vector<double>{});
+  this->declare_parameter("vesc_pole_pairs", std::vector<int64_t>{});
+  this->declare_parameter("vesc_gear_ratio", std::vector<double>{});
+  this->declare_parameter("vesc_motor_gear_ratio", std::vector<double>{});
 
-  can_interface_ = this->get_parameter("can_interface").as_string();
+  can_interface_ = this->get_parameter("vesc_can_interface").as_string();
   command_timeout_ms_ = this->get_parameter("command_timeout_ms").as_int();
 
   driver_ = std::make_unique<RawCanSocket>(can_interface_);
@@ -281,26 +282,28 @@ void HardwareNode::createMotorsFromParameters()
   std::vector<double> speed_min_rpm, speed_max_rpm, speed_deadzone_rpm;
   std::vector<double> position_min_deg, position_max_deg, position_zero_offset_deg;
   std::vector<int64_t> pole_pairs;
-  std::vector<double> gear_ratios;
+  std::vector<double> gear_ratio;
+  std::vector<double> motor_gear_ratio;
 
   try
   {
-    this->get_parameter("motor_ids", motor_ids);
-    this->get_parameter("operate_modes", operate_modes);
+    this->get_parameter("vesc_motor_ids", motor_ids);
+    this->get_parameter("vesc_operate_modes", operate_modes);
 
-    this->get_parameter("current_min", current_min);
-    this->get_parameter("current_max", current_max);
+    this->get_parameter("vesc_current_min", current_min);
+    this->get_parameter("vesc_current_max", current_max);
 
-    this->get_parameter("speed_min", speed_min_rpm);
-    this->get_parameter("speed_max", speed_max_rpm);
-    this->get_parameter("speed_deadzone", speed_deadzone_rpm);
+    this->get_parameter("vesc_speed_min", speed_min_rpm);
+    this->get_parameter("vesc_speed_max", speed_max_rpm);
+    this->get_parameter("vesc_speed_deadzone", speed_deadzone_rpm);
 
-    this->get_parameter("position_min", position_min_deg);
-    this->get_parameter("position_max", position_max_deg);
-    this->get_parameter("position_zero_offset", position_zero_offset_deg);
+    this->get_parameter("vesc_position_min", position_min_deg);
+    this->get_parameter("vesc_position_max", position_max_deg);
+    this->get_parameter("vesc_position_zero_offset", position_zero_offset_deg);
 
-    this->get_parameter("pole_pairs", pole_pairs);
-    this->get_parameter("gear_ratios", gear_ratios);
+    this->get_parameter("vesc_pole_pairs", pole_pairs);
+    this->get_parameter("vesc_gear_ratio", gear_ratio);
+    this->get_parameter("vesc_motor_gear_ratio", motor_gear_ratio);
   }
   catch (const std::exception &e)
   {
@@ -318,7 +321,7 @@ void HardwareNode::createMotorsFromParameters()
 
   if (operate_modes.size() != n)
   {
-    RCLCPP_ERROR(this->get_logger(), "Parameter size mismatch: operate_modes");
+    RCLCPP_ERROR(this->get_logger(), "Parameter size mismatch: vesc_operate_modes");
     return;
   }
 
@@ -342,16 +345,17 @@ void HardwareNode::createMotorsFromParameters()
     return true;
   };
 
-  if (!check_size_double(current_min, "current_min") ||
-      !check_size_double(current_max, "current_max") ||
-      !check_size_double(speed_min_rpm, "speed_min") ||
-      !check_size_double(speed_max_rpm, "speed_max") ||
-      !check_size_double(speed_deadzone_rpm, "speed_deadzone") ||
-      !check_size_double(position_min_deg, "position_min") ||
-      !check_size_double(position_max_deg, "position_max") ||
-      !check_size_double(position_zero_offset_deg, "position_zero_offset") ||
-      !check_size_int(pole_pairs, "pole_pairs") ||
-      !check_size_double(gear_ratios, "gear_ratios"))
+  if (!check_size_double(current_min, "vesc_current_min") ||
+      !check_size_double(current_max, "vesc_current_max") ||
+      !check_size_double(speed_min_rpm, "vesc_speed_min") ||
+      !check_size_double(speed_max_rpm, "vesc_speed_max") ||
+      !check_size_double(speed_deadzone_rpm, "vesc_speed_deadzone") ||
+      !check_size_double(position_min_deg, "vesc_position_min") ||
+      !check_size_double(position_max_deg, "vesc_position_max") ||
+      !check_size_double(position_zero_offset_deg, "vesc_position_zero_offset") ||
+      !check_size_int(pole_pairs, "vesc_pole_pairs") ||
+      !check_size_double(gear_ratio, "vesc_gear_ratio") ||
+      !check_size_double(motor_gear_ratio, "vesc_motor_gear_ratio"))
   {
     return;
   }
@@ -386,7 +390,7 @@ void HardwareNode::createMotorsFromParameters()
     unit.position_zero_offset = position_zero_offset_deg[i];
 
     unit.pole_pairs = static_cast<int>(pole_pairs[i]);
-    unit.gear_ratio = gear_ratios[i];
+    unit.gear_ratio = gear_ratio[i] * motor_gear_ratio[i];
 
     unit.target = 0.0;
     unit.stopped = true;

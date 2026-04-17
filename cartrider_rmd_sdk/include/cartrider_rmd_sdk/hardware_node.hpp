@@ -44,6 +44,8 @@ private:
     double target{0.0};
     bool stopped{true};
 
+    double gear_ratio{1.0};
+    
     double current_min{0.0};
     double current_max{0.0};
 

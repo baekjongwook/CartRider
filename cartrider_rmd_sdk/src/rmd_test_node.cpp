@@ -14,7 +14,7 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
-#include <limits> 
+#include <limits>
 
 class RmdTestNode : public rclcpp::Node
 {
@@ -44,7 +44,7 @@ public:
       for (size_t i = 0; i < motor_ids_.size(); ++i)
       {
         int id = motor_ids_[i];
-        const std::string & mode = operate_modes_[i];
+        const std::string &mode = operate_modes_[i];
 
         double target = 0.0;
 
@@ -126,34 +126,31 @@ public:
   }
 
 private:
-
   void loadYamlConfig()
   {
     try
     {
       std::string pkg_share = ament_index_cpp::get_package_share_directory("cartrider_rmd_sdk");
-
       std::string yaml_path = pkg_share + "/param/motors.yaml";
 
       YAML::Node config = YAML::LoadFile(yaml_path);
-
       YAML::Node params = config["hardware_node"]["ros__parameters"];
 
-      motor_ids_ = params["motor_ids"].as<std::vector<int64_t>>();
-      operate_modes_ = params["operate_modes"].as<std::vector<std::string>>();
+      motor_ids_ = params["rmd_motor_ids"].as<std::vector<int64_t>>();
+      operate_modes_ = params["rmd_operate_modes"].as<std::vector<std::string>>();
 
-      current_min_ = params["current_min"].as<std::vector<double>>();
-      current_max_ = params["current_max"].as<std::vector<double>>();
+      current_min_ = params["rmd_current_min"].as<std::vector<double>>();
+      current_max_ = params["rmd_current_max"].as<std::vector<double>>();
 
-      speed_min_ = params["speed_min"].as<std::vector<double>>();
-      speed_max_ = params["speed_max"].as<std::vector<double>>();
+      speed_min_ = params["rmd_speed_min"].as<std::vector<double>>();
+      speed_max_ = params["rmd_speed_max"].as<std::vector<double>>();
 
-      position_min_ = params["position_min"].as<std::vector<double>>();
-      position_max_ = params["position_max"].as<std::vector<double>>();
+      position_min_ = params["rmd_position_min"].as<std::vector<double>>();
+      position_max_ = params["rmd_position_max"].as<std::vector<double>>();
 
       validateParameters();
     }
-    catch (const std::exception & e)
+    catch (const std::exception &e)
     {
       RCLCPP_FATAL(this->get_logger(), "Failed to load motors.yaml: %s", e.what());
       throw;
@@ -165,7 +162,7 @@ private:
     size_t n = motor_ids_.size();
 
     if (n == 0)
-      throw std::runtime_error("No motor_ids defined in YAML.");
+      throw std::runtime_error("No rmd_motor_ids defined in YAML.");
 
     if (operate_modes_.size() != n ||
         current_min_.size() != n ||
@@ -181,7 +178,7 @@ private:
 
   void publishLoop()
   {
-    rclcpp::Rate rate(10); 
+    rclcpp::Rate rate(10);
 
     while (rclcpp::ok() && running_)
     {
@@ -220,11 +217,12 @@ private:
   std::atomic<bool> running_{true};
 };
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<RmdTestNode>();
-  std::thread input_thread([&]() {node->run();});
+  std::thread input_thread([&]()
+                           { node->run(); });
   rclcpp::spin(node);
   rclcpp::shutdown();
 

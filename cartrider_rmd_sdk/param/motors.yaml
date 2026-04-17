@@ -1,19 +1,29 @@
 hardware_node:
   ros__parameters:
-    can_interface: "can0"
+    rmd_can_interface: "can_front_rmd"
+    rmd_motor_ids: [1, 2]
+    rmd_operate_modes: ["speed", "speed"]   # current, speed, position
+    rmd_gear_ratio: [3.0, 3.0]
 
-    motor_ids: [1, 2]
+    rmd_current_min: [-0.5, -0.5] # A
+    rmd_current_max: [0.5, 0.5]
 
-    operate_modes: ["speed", "speed"] #current, speed, position
+    rmd_speed_min: [-90.0, -90.0] # RPM
+    rmd_speed_max: [90.0, 90.0]
+    rmd_speed_deadzone: [5.0, 5.0]
 
-    current_min: [-0.5, -0.5] #A
-    current_max: [0.5, 0.5]
+    rmd_position_min: [-120.0, -120.0] # degree
+    rmd_position_max: [120.0, 120.0]
+    rmd_position_omega_max: [30.0, 30.0] # RPM
 
-    speed_min: [-90.0, -90.0] #RPM
-    speed_max: [90.0, 90.0]
-    speed_deadzone: [5.0, 5.0]
+    ## Don't touch! ##
+    rmd_safety_current_min: [-5.0, -5.0] # A
+    rmd_safety_current_max: [5.0, 5.0]
 
-    position_min: [-120.0, -120.0] #degree
-    position_max: [120.0, 120.0]
-    position_omega_max: [30.0, 30.0] #RPM
+    rmd_safety_speed_min: [-100.0, -100.0] # RPM
+    rmd_safety_speed_max: [100.0, 100.0]
 
+    rmd_safety_position_min: [-180.0, -180.0] # degree
+    rmd_safety_position_max: [180.0, 180.0]
+    rmd_safety_position_omega_max: [100.0, 100.0] # RPM
+    ## Don't touch! ##

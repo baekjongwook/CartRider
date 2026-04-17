@@ -8,21 +8,30 @@ import os
 
 def generate_launch_description():
 
-    config = os.path.join(
+    default_param_file = os.path.join(
         get_package_share_directory("cartrider_vesc_sdk"), "param", "motors.yaml"
     )
 
-    can_interface_arg = DeclareLaunchArgument(
-        "can_interface",
-        default_value="can0",
-        description="CAN interface name for VESC hardware node",
+    override_param_file_arg = DeclareLaunchArgument(
+        "override_param_file",
+        default_value=default_param_file,
+        description="Override parameter file. Defaults to motors.yaml itself.",
     )
 
     hardware_node = Node(
         package="cartrider_vesc_sdk",
         executable="hardware_node",
-        parameters=[config, {"can_interface": LaunchConfiguration("can_interface")}],
+        name="hardware_node",
+        parameters=[
+            default_param_file,
+            LaunchConfiguration("override_param_file"),
+        ],
         output="screen",
     )
 
-    return LaunchDescription([can_interface_arg, hardware_node])
+    return LaunchDescription(
+        [
+            override_param_file_arg,
+            hardware_node,
+        ]
+    )

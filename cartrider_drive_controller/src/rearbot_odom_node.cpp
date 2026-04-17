@@ -15,15 +15,27 @@ class RearbotOdomNode : public rclcpp::Node
 {
 public:
   RearbotOdomNode()
-  : Node("rearbot_odom_node"),
-    x_(0.0), y_(0.0), theta_(0.0),
-    initialized_(false)
+      : Node("rearbot_odom_node"),
+        x_(0.0), y_(0.0), theta_(0.0),
+        initialized_(false)
   {
     r_ = this->declare_parameter<double>("wheel_radius");
-    L_ = this->declare_parameter<double>("wheel_separation");
+    L_ = this->declare_parameter<double>("track_width");
 
-    left_id_  = this->declare_parameter<int>("left_motor_id");
-    right_id_ = this->declare_parameter<int>("right_motor_id");
+    rmd_motor_ids_ =
+        this->declare_parameter<std::vector<int64_t>>("rmd_motor_ids", std::vector<int64_t>{});
+
+    if (rmd_motor_ids_.size() != 2)
+    {
+      RCLCPP_FATAL(
+          this->get_logger(),
+          "Parameter 'rmd_motor_ids' must contain exactly 2 elements. Got %zu",
+          rmd_motor_ids_.size());
+      throw std::runtime_error("Invalid rmd_motor_ids size");
+    }
+
+    left_id_ = static_cast<int>(rmd_motor_ids_[0]);
+    right_id_ = static_cast<int>(rmd_motor_ids_[1]);
 
     sub_ = create_subscription<cartrider_rmd_sdk::msg::MotorStateArray>(
         "rmd_state",
@@ -31,7 +43,7 @@ public:
         std::bind(&RearbotOdomNode::stateCallback, this, std::placeholders::_1));
 
     odom_pub_ = create_publisher<nav_msgs::msg::Odometry>(
-        "odom", 
+        "odom",
         10);
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -48,11 +60,11 @@ private:
     bool left_found = false;
     bool right_found = false;
 
-    for (const auto & s : msg->states)
+    for (const auto &s : msg->states)
     {
       if (s.id == left_id_)
       {
-        left_pos = s.position; 
+        left_pos = s.position;
         left_found = true;
       }
       else if (s.id == right_id_)
@@ -128,12 +140,12 @@ private:
     odom.twist.twist.linear.x = vx;
     odom.twist.twist.angular.z = vtheta;
 
-    odom.pose.covariance[0]  = 0.01;
-    odom.pose.covariance[7]  = 0.01; 
-    odom.pose.covariance[35] = 0.02;  
+    odom.pose.covariance[0] = 0.01;
+    odom.pose.covariance[7] = 0.01;
+    odom.pose.covariance[35] = 0.02;
 
-    odom.twist.covariance[0]  = 0.01;  
-    odom.twist.covariance[35] = 0.02; 
+    odom.twist.covariance[0] = 0.01;
+    odom.twist.covariance[35] = 0.02;
 
     odom_pub_->publish(odom);
   }
@@ -163,6 +175,7 @@ private:
 
   double r_;
   double L_;
+  std::vector<int64_t> rmd_motor_ids_;
   int left_id_;
   int right_id_;
 
@@ -176,7 +189,7 @@ private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 };
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<RearbotOdomNode>());

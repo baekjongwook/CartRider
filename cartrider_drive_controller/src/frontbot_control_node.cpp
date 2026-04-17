@@ -26,13 +26,35 @@ public:
         wheel_radius_ = this->declare_parameter<double>("wheel_radius");
         track_width_ = this->declare_parameter<double>("track_width");
         wheel_base_ = this->declare_parameter<double>("wheel_base");
-        gear_ratio_ = this->declare_parameter<double>("gear_ratio");
 
-        left_rmd_id_ = this->declare_parameter<int>("left_motor_id");
-        right_rmd_id_ = this->declare_parameter<int>("right_motor_id");
+        rmd_motor_ids_ =
+            this->declare_parameter<std::vector<int64_t>>("rmd_motor_ids", std::vector<int64_t>{});
+        vesc_motor_ids_ =
+            this->declare_parameter<std::vector<int64_t>>("vesc_motor_ids", std::vector<int64_t>{});
 
-        left_vesc_id_ = this->declare_parameter<int>("yaw_left_motor_id");
-        right_vesc_id_ = this->declare_parameter<int>("yaw_right_motor_id");
+        if (rmd_motor_ids_.size() != 2)
+        {
+            RCLCPP_FATAL(
+                this->get_logger(),
+                "Parameter 'rmd_motor_ids' must contain exactly 2 elements. Got %zu",
+                rmd_motor_ids_.size());
+            throw std::runtime_error("Invalid rmd_motor_ids size");
+        }
+
+        if (vesc_motor_ids_.size() != 2)
+        {
+            RCLCPP_FATAL(
+                this->get_logger(),
+                "Parameter 'vesc_motor_ids' must contain exactly 2 elements. Got %zu",
+                vesc_motor_ids_.size());
+            throw std::runtime_error("Invalid vesc_motor_ids size");
+        }
+
+        left_rmd_id_ = static_cast<int>(rmd_motor_ids_[0]);
+        right_rmd_id_ = static_cast<int>(rmd_motor_ids_[1]);
+
+        left_vesc_id_ = static_cast<int>(vesc_motor_ids_[0]);
+        right_vesc_id_ = static_cast<int>(vesc_motor_ids_[1]);
 
         const std::string drive_mode_str =
             this->declare_parameter<std::string>("drive_mode", "differential");
@@ -102,7 +124,9 @@ private:
     double wheel_radius_{0.0};
     double track_width_{0.0};
     double wheel_base_{0.0};
-    double gear_ratio_{1.0};
+
+    std::vector<int64_t> rmd_motor_ids_;
+    std::vector<int64_t> vesc_motor_ids_;
 
     int left_rmd_id_{0};
     int right_rmd_id_{0};
@@ -210,21 +234,15 @@ private:
         const double left_wheel_radps = output.left_w;
         const double right_wheel_radps = -output.right_w;
 
-        const double left_motor_radps = left_wheel_radps * gear_ratio_;
-        const double right_motor_radps = right_wheel_radps * gear_ratio_;
-
         RCLCPP_INFO(
             this->get_logger(),
             "[%s][DIFF] cmd_vel: v=%.3f [m/s] w=%.3f [rad/s] -> "
-            "left_wheel=%.3f [rad/s], right_wheel=%.3f [rad/s], "
-            "left_motor=%.3f [rad/s], right_motor=%.3f [rad/s]",
+            "left_wheel=%.3f [rad/s], right_wheel=%.3f [rad/s]",
             source.c_str(),
             msg->linear.x,
             msg->angular.z,
             left_wheel_radps,
-            right_wheel_radps,
-            left_motor_radps,
-            right_motor_radps);
+            right_wheel_radps);
 
         cartrider_rmd_sdk::msg::MotorCommandArray rmd_cmd;
         cartrider_rmd_sdk::msg::MotorCommand left_drive_cmd;
@@ -239,8 +257,8 @@ private:
         left_yaw_cmd.id = left_vesc_id_;
         right_yaw_cmd.id = right_vesc_id_;
 
-        left_drive_cmd.target = left_motor_radps;
-        right_drive_cmd.target = right_motor_radps;
+        left_drive_cmd.target = left_wheel_radps;
+        right_drive_cmd.target = right_wheel_radps;
 
         left_yaw_cmd.target = 0.0;
         right_yaw_cmd.target = 0.0;
@@ -266,24 +284,18 @@ private:
         const double left_wheel_radps = output.left_w;
         const double right_wheel_radps = -output.right_w;
 
-        const double left_motor_radps = left_wheel_radps * gear_ratio_;
-        const double right_motor_radps = right_wheel_radps * gear_ratio_;
-
         RCLCPP_INFO(
             this->get_logger(),
             "[%s][ACK] cmd_vel: v=%.3f [m/s] w=%.3f [rad/s] -> "
             "left_steer=%.3f [rad], right_steer=%.3f [rad], "
-            "left_wheel=%.3f [rad/s], right_wheel=%.3f [rad/s], "
-            "left_motor=%.3f [rad/s], right_motor=%.3f [rad/s]",
+            "left_wheel=%.3f [rad/s], right_wheel=%.3f [rad/s]",
             source.c_str(),
             msg->linear.x,
             msg->angular.z,
             left_steer_rad,
             right_steer_rad,
             left_wheel_radps,
-            right_wheel_radps,
-            left_motor_radps,
-            right_motor_radps);
+            right_wheel_radps);
 
         cartrider_rmd_sdk::msg::MotorCommandArray rmd_cmd;
         cartrider_rmd_sdk::msg::MotorCommand left_drive_cmd;
@@ -298,8 +310,8 @@ private:
         left_yaw_cmd.id = left_vesc_id_;
         right_yaw_cmd.id = right_vesc_id_;
 
-        left_drive_cmd.target = left_motor_radps;
-        right_drive_cmd.target = right_motor_radps;
+        left_drive_cmd.target = left_wheel_radps;
+        right_drive_cmd.target = right_wheel_radps;
 
         left_yaw_cmd.target = left_steer_rad;
         right_yaw_cmd.target = right_steer_rad;
