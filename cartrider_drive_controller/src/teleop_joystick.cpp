@@ -1,5 +1,6 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
+// Modified: joystick publishes only cmd_vel_joy
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -22,16 +23,20 @@ public:
 
     Teleop() : Node("teleop_joystick")
     {
-        rearbot_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
-            "/cmd_vel",
+        rearbot_cmd_joy_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
+            "/rear/cmd_vel_joy",
             10);
 
-        frontbot_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
-            "/front/cmd_vel",
+        frontbot_cmd_joy_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
+            "/front/cmd_vel_joy",
             10);
 
-        joy_sig_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "/joy_control_sig",
+        rear_joy_sig_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/rear/joy_control_sig",
+            10);
+
+        front_joy_sig_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/front/joy_control_sig",
             10);
 
         docking_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
@@ -39,7 +44,7 @@ public:
             10);
 
         sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
-            "joy",
+            "/joy",
             10,
             std::bind(&Teleop::joyCallback, this, std::placeholders::_1));
 
@@ -72,15 +77,19 @@ public:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Joystick Teleop Started. Initial Mode: %s",
-            controlModeToString(control_mode_).c_str());
+            "Joystick Teleop Started. Initial Mode: %s, Joy Input Mode: %s",
+            controlModeToString(control_mode_).c_str(),
+            joy_mode_active_ ? "JOYSTICK" : "NAVIGATION");
     }
 
 private:
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr rearbot_cmd_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr frontbot_cmd_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr joy_sig_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr rearbot_cmd_joy_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr frontbot_cmd_joy_pub_;
+
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rear_joy_sig_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr front_joy_sig_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr docking_state_pub_;
+
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
 
     bool cmd_vel_was_zero_{true};
@@ -91,14 +100,14 @@ private:
 
     ControlMode control_mode_{ControlMode::REARBOT_INDEPENDENT};
 
-    double rearbot_cmd_vel_max_lin_;
-    double rearbot_cmd_vel_max_ang_;
+    double rearbot_cmd_vel_max_lin_{0.0};
+    double rearbot_cmd_vel_max_ang_{0.0};
 
-    double frontbot_cmd_vel_max_lin_;
-    double frontbot_cmd_vel_max_ang_;
+    double frontbot_cmd_vel_max_lin_{0.0};
+    double frontbot_cmd_vel_max_ang_{0.0};
 
-    double multibot_cmd_vel_max_lin_;
-    double multibot_cmd_vel_max_ang_;
+    double multibot_cmd_vel_max_lin_{0.0};
+    double multibot_cmd_vel_max_ang_{0.0};
 
     int linear_axis_index_{1};
     int angular_axis_index_{3};
@@ -131,13 +140,16 @@ private:
     {
         std_msgs::msg::Bool msg;
         msg.data = joy_mode_active_;
-        joy_sig_pub_->publish(msg);
+
+        rear_joy_sig_pub_->publish(msg);
+        front_joy_sig_pub_->publish(msg);
     }
 
     void publishDockingState()
     {
         std_msgs::msg::Bool msg;
         msg.data = isDockedMode();
+
         docking_state_pub_->publish(msg);
     }
 
@@ -209,15 +221,15 @@ private:
         switch (control_mode_)
         {
         case ControlMode::REARBOT_INDEPENDENT:
-            rearbot_cmd_pub_->publish(cmd); // /cmd_vel
+            rearbot_cmd_joy_pub_->publish(cmd);
             break;
 
         case ControlMode::FRONTBOT_INDEPENDENT:
-            frontbot_cmd_pub_->publish(cmd); // /front/cmd_vel
+            frontbot_cmd_joy_pub_->publish(cmd);
             break;
 
         case ControlMode::MULTIBOT_ACKERMANN:
-            rearbot_cmd_pub_->publish(cmd); // /cmd_vel
+            frontbot_cmd_joy_pub_->publish(cmd);
             break;
 
         default:
@@ -266,7 +278,6 @@ private:
         {
             ps_btn_once_ = true;
         }
-
         if (button_x)
         {
             cmd.linear.x = 0.0;
@@ -313,6 +324,7 @@ private:
         cmd_vel_was_zero_ = is_zero;
 
         std::cout << "\rMode: " << controlModeToString(control_mode_)
+                  << "  JoyInput: " << (joy_mode_active_ ? "JOYSTICK" : "NAVIGATION")
                   << "  Docked: " << (isDockedMode() ? "true" : "false")
                   << "  Linear: " << cmd.linear.x
                   << "  Angular: " << cmd.angular.z

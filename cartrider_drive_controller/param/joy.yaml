@@ -5,8 +5,6 @@ joy_node:
 
 teleop_joystick:
   ros__parameters:
-    robot_type: "frontbot"
-
     rearbot_cmd_vel_max_lin: 0.2
     rearbot_cmd_vel_max_ang: 1.0
 

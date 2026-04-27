@@ -1,6 +1,3 @@
-// Rearbot Control Node
-// 2026.02.18 백종욱
-
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/bool.hpp>
@@ -60,7 +57,7 @@ public:
 
     RCLCPP_INFO(
         this->get_logger(),
-        "Rearbot Control Node Started. Default Mode: JOYSTICK, rear_wheel_radius=%.4f, rear_track_width=%.4f",
+        "Rearbot Control Node Started. Input Mode: JOYSTICK, rear_wheel_radius=%.4f, rear_track_width=%.4f",
         r_,
         L_);
   }
@@ -89,16 +86,17 @@ private:
 private:
   void joySigCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
+    if (joy_mode_active_ == msg->data)
+    {
+      return;
+    }
+
     joy_mode_active_ = msg->data;
 
-    if (joy_mode_active_)
-    {
-      RCLCPP_INFO(this->get_logger(), "Control Mode Switched: [ JOYSTICK ]");
-    }
-    else
-    {
-      RCLCPP_INFO(this->get_logger(), "Control Mode Switched: [ NAVIGATION ]");
-    }
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Control Input Mode Switched: [%s]",
+        joy_mode_active_ ? "JOYSTICK" : "NAVIGATION");
   }
 
   void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -147,8 +145,7 @@ private:
           this->get_logger(),
           *this->get_clock(),
           1000,
-          "[%s] Docked state: rearbot independent cmd_vel ignored. "
-          "Rear wheels are controlled by frontbot 2WS-4WD controller.",
+          "[%s] Docked state: rearbot independent cmd_vel ignored. Rear wheels are controlled by frontbot 2WS-4WD controller.",
           source.c_str());
       return;
     }
@@ -157,15 +154,6 @@ private:
 
     const double left_radps = -output.left_w;
     const double right_radps = output.right_w;
-
-    RCLCPP_INFO(
-        this->get_logger(),
-        "[%s][DIFF] cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
-        source.c_str(),
-        msg->linear.x,
-        msg->angular.z,
-        left_radps,
-        right_radps);
 
     cartrider_rmd_sdk::msg::MotorCommandArray cmd;
 
@@ -181,6 +169,15 @@ private:
     cmd.commands.push_back(right_cmd);
 
     command_pub_->publish(cmd);
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "[%s][DIFF] v=%.3f w=%.3f -> left=%.3f right=%.3f",
+        source.c_str(),
+        msg->linear.x,
+        msg->angular.z,
+        left_radps,
+        right_radps);
   }
 };
 

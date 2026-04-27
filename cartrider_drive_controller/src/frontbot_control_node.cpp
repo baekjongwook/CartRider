@@ -1,6 +1,3 @@
-// Frontbot Control Node
-// 2026.04.15 백종욱
-
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/bool.hpp>
@@ -63,12 +60,7 @@ public:
         rear_left_rmd_id_ = static_cast<int>(rear_rmd_motor_ids_[0]);
         rear_right_rmd_id_ = static_cast<int>(rear_rmd_motor_ids_[1]);
 
-        const std::string drive_mode_str =
-            this->declare_parameter<std::string>("drive_mode", "differential");
-
-        drive_mode_ = (drive_mode_str == "ackermann")
-                          ? DriveMode::ACKERMANN
-                          : DriveMode::DIFFERENTIAL;
+        drive_mode_ = DriveMode::DIFFERENTIAL;
 
         diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(
             front_wheel_radius_, front_track_width_);
@@ -81,14 +73,19 @@ public:
             rear_wheel_radius_);
 
         cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/cmd_vel",
+            "cmd_vel",
             10,
             std::bind(&FrontbotControlNode::cmdCallback, this, std::placeholders::_1));
 
-        front_cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/front/cmd_vel",
+        cmd_joy_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            "cmd_vel_joy",
             10,
-            std::bind(&FrontbotControlNode::frontCmdCallback, this, std::placeholders::_1));
+            std::bind(&FrontbotControlNode::cmdJoyCallback, this, std::placeholders::_1));
+
+        joy_sig_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "joy_control_sig",
+            10,
+            std::bind(&FrontbotControlNode::joySigCallback, this, std::placeholders::_1));
 
         docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/docking_state",
@@ -96,21 +93,22 @@ public:
             std::bind(&FrontbotControlNode::dockingStateCallback, this, std::placeholders::_1));
 
         front_rmd_command_pub_ =
-            this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>("/front/rmd_command", 10);
+            this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>("rmd_command", 10);
 
         front_vesc_command_pub_ =
-            this->create_publisher<cartrider_vesc_sdk::msg::MotorCommandArray>("/front/vesc_command", 10);
+            this->create_publisher<cartrider_vesc_sdk::msg::MotorCommandArray>("vesc_command", 10);
 
         rear_rmd_command_pub_ =
             this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>("/rear/rmd_command", 10);
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Frontbot Control Node Started. Drive Mode: %s",
+            "Frontbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s",
             driveModeToString(drive_mode_).c_str());
     }
 
 private:
+    bool joy_mode_active_{true};
     DriveMode drive_mode_{DriveMode::DIFFERENTIAL};
 
     std::unique_ptr<vehicle_kinematics::DifferentialDrive> diff_;
@@ -134,7 +132,8 @@ private:
     int rear_right_rmd_id_{0};
 
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr front_cmd_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_joy_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
 
     rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr front_rmd_command_pub_;
@@ -153,6 +152,21 @@ private:
         default:
             return "UNKNOWN";
         }
+    }
+
+    void joySigCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        if (joy_mode_active_ == msg->data)
+        {
+            return;
+        }
+
+        joy_mode_active_ = msg->data;
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Control Input Mode Switched: [%s]",
+            joy_mode_active_ ? "JOYSTICK" : "NAVIGATION");
     }
 
     void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -175,22 +189,36 @@ private:
 
     void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (drive_mode_ != DriveMode::ACKERMANN)
+        if (joy_mode_active_)
         {
             return;
         }
 
-        publishAckermannCommand(msg, "MULTIBOT_CMD");
+        handleCommand(msg, "NAV");
     }
 
-    void frontCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+    void cmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (drive_mode_ != DriveMode::DIFFERENTIAL)
+        if (!joy_mode_active_)
         {
             return;
         }
 
-        publishDifferentialCommand(msg, "FRONT_CMD");
+        handleCommand(msg, "JOY");
+    }
+
+    void handleCommand(
+        const geometry_msgs::msg::Twist::SharedPtr msg,
+        const std::string &source)
+    {
+        if (drive_mode_ == DriveMode::ACKERMANN)
+        {
+            publishAckermannCommand(msg, source);
+        }
+        else
+        {
+            publishDifferentialCommand(msg, source);
+        }
     }
 
     void publishDifferentialCommand(
