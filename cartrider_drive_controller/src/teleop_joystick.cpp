@@ -13,24 +13,29 @@
 class Teleop : public rclcpp::Node
 {
 public:
-    enum class RobotType
+    enum class ControlMode
     {
-        REARBOT,
-        FRONTBOT
+        REARBOT_INDEPENDENT = 0,
+        FRONTBOT_INDEPENDENT = 1,
+        MULTIBOT_ACKERMANN = 2
     };
 
     Teleop() : Node("teleop_joystick")
     {
-        pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
-            "cmd_vel_joy",
+        rearbot_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
+            "/cmd_vel",
+            10);
+
+        frontbot_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
+            "/front/cmd_vel",
             10);
 
         joy_sig_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "joy_control_sig",
+            "/joy_control_sig",
             10);
 
         docking_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "docking_state",
+            "/docking_state",
             10);
 
         sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
@@ -38,23 +43,20 @@ public:
             10,
             std::bind(&Teleop::joyCallback, this, std::placeholders::_1));
 
-        robot_type_str_ =
-            this->declare_parameter<std::string>("robot_type", "rearbot");
+        rearbot_cmd_vel_max_lin_ =
+            this->declare_parameter<double>("rearbot_cmd_vel_max_lin");
+        rearbot_cmd_vel_max_ang_ =
+            this->declare_parameter<double>("rearbot_cmd_vel_max_ang");
 
-        rearbot_max_lin_ =
-            this->declare_parameter<double>("rearbot_max_lin");
-        rearbot_max_ang_ =
-            this->declare_parameter<double>("rearbot_max_ang");
+        frontbot_cmd_vel_max_lin_ =
+            this->declare_parameter<double>("frontbot_cmd_vel_max_lin");
+        frontbot_cmd_vel_max_ang_ =
+            this->declare_parameter<double>("frontbot_cmd_vel_max_ang");
 
-        frontbot_diff_max_lin_ =
-            this->declare_parameter<double>("frontbot_diff_max_lin");
-        frontbot_diff_max_ang_ =
-            this->declare_parameter<double>("frontbot_diff_max_ang");
-
-        frontbot_ack_max_lin_ =
-            this->declare_parameter<double>("frontbot_ack_max_lin");
-        frontbot_ack_max_ang_ =
-            this->declare_parameter<double>("frontbot_ack_max_ang");
+        multibot_cmd_vel_max_lin_ =
+            this->declare_parameter<double>("multibot_cmd_vel_max_lin");
+        multibot_cmd_vel_max_ang_ =
+            this->declare_parameter<double>("multibot_cmd_vel_max_ang");
 
         linear_axis_index_ =
             this->declare_parameter<int>("linear_axis_index");
@@ -66,59 +68,37 @@ public:
         ps_button_index_ =
             this->declare_parameter<int>("ps_button_index");
 
-        if (robot_type_str_ == "rearbot")
-        {
-            robot_type_ = RobotType::REARBOT;
-        }
-        else if (robot_type_str_ == "frontbot")
-        {
-            robot_type_ = RobotType::FRONTBOT;
-        }
-        else
-        {
-            RCLCPP_WARN(
-                this->get_logger(),
-                "Unknown robot_type '%s'. Falling back to 'rearbot'.",
-                robot_type_str_.c_str());
-            robot_type_ = RobotType::REARBOT;
-        }
-
         publishInitialStates();
-
-        std::cout << "Joystick Teleop Started\n";
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Robot type: %s | Initial frontbot mode: %s",
-            robotTypeToString(robot_type_).c_str(),
-            docking_state_ ? "ACKERMANN" : "DIFFERENTIAL");
+            "Joystick Teleop Started. Initial Mode: %s",
+            controlModeToString(control_mode_).c_str());
     }
 
 private:
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr rearbot_cmd_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr frontbot_cmd_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr joy_sig_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr docking_state_pub_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
 
-    bool cmd_vel_was_zero_ = true;
-    bool joy_mode_active_ = true;
+    bool cmd_vel_was_zero_{true};
+    bool joy_mode_active_{true};
 
-    bool docking_state_ = false; // false=differential, true=ackermann
+    bool x_btn_once_{true};
+    bool ps_btn_once_{true};
 
-    bool x_btn_once_ = true;
-    bool ps_btn_once_ = true;
+    ControlMode control_mode_{ControlMode::REARBOT_INDEPENDENT};
 
-    RobotType robot_type_{RobotType::REARBOT};
-    std::string robot_type_str_{"rearbot"};
+    double rearbot_cmd_vel_max_lin_;
+    double rearbot_cmd_vel_max_ang_;
 
-    double rearbot_max_lin_{0.5};
-    double rearbot_max_ang_{0.2};
+    double frontbot_cmd_vel_max_lin_;
+    double frontbot_cmd_vel_max_ang_;
 
-    double frontbot_diff_max_lin_{0.5};
-    double frontbot_diff_max_ang_{0.2};
-
-    double frontbot_ack_max_lin_{0.3};
-    double frontbot_ack_max_ang_{0.15};
+    double multibot_cmd_vel_max_lin_;
+    double multibot_cmd_vel_max_ang_;
 
     int linear_axis_index_{1};
     int angular_axis_index_{3};
@@ -127,17 +107,24 @@ private:
     int ps_button_index_{10};
 
 private:
-    std::string robotTypeToString(RobotType type) const
+    std::string controlModeToString(ControlMode mode) const
     {
-        switch (type)
+        switch (mode)
         {
-        case RobotType::REARBOT:
-            return "REARBOT";
-        case RobotType::FRONTBOT:
-            return "FRONTBOT";
+        case ControlMode::REARBOT_INDEPENDENT:
+            return "REARBOT_INDEPENDENT";
+        case ControlMode::FRONTBOT_INDEPENDENT:
+            return "FRONTBOT_INDEPENDENT";
+        case ControlMode::MULTIBOT_ACKERMANN:
+            return "MULTIBOT_ACKERMANN";
         default:
             return "UNKNOWN";
         }
+    }
+
+    bool isDockedMode() const
+    {
+        return control_mode_ == ControlMode::MULTIBOT_ACKERMANN;
     }
 
     void publishJoyMode()
@@ -150,7 +137,7 @@ private:
     void publishDockingState()
     {
         std_msgs::msg::Bool msg;
-        msg.data = docking_state_;
+        msg.data = isDockedMode();
         docking_state_pub_->publish(msg);
     }
 
@@ -160,24 +147,81 @@ private:
         publishDockingState();
     }
 
-    void getCurrentGains(double &max_lin, double &max_ang) const
+    void nextControlMode()
     {
-        if (robot_type_ == RobotType::REARBOT)
+        switch (control_mode_)
         {
-            max_lin = rearbot_max_lin_;
-            max_ang = rearbot_max_ang_;
-            return;
+        case ControlMode::REARBOT_INDEPENDENT:
+            control_mode_ = ControlMode::FRONTBOT_INDEPENDENT;
+            break;
+
+        case ControlMode::FRONTBOT_INDEPENDENT:
+            control_mode_ = ControlMode::MULTIBOT_ACKERMANN;
+            break;
+
+        case ControlMode::MULTIBOT_ACKERMANN:
+            control_mode_ = ControlMode::REARBOT_INDEPENDENT;
+            break;
+
+        default:
+            control_mode_ = ControlMode::REARBOT_INDEPENDENT;
+            break;
         }
 
-        if (!docking_state_) // differential
+        cmd_vel_was_zero_ = true;
+        publishDockingState();
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Joystick Control Mode Switched: [%s], docking_state=%s",
+            controlModeToString(control_mode_).c_str(),
+            isDockedMode() ? "true" : "false");
+    }
+
+    void getCurrentGains(double &max_lin, double &max_ang) const
+    {
+        switch (control_mode_)
         {
-            max_lin = frontbot_diff_max_lin_;
-            max_ang = frontbot_diff_max_ang_;
+        case ControlMode::REARBOT_INDEPENDENT:
+            max_lin = rearbot_cmd_vel_max_lin_;
+            max_ang = rearbot_cmd_vel_max_ang_;
+            break;
+
+        case ControlMode::FRONTBOT_INDEPENDENT:
+            max_lin = frontbot_cmd_vel_max_lin_;
+            max_ang = frontbot_cmd_vel_max_ang_;
+            break;
+
+        case ControlMode::MULTIBOT_ACKERMANN:
+            max_lin = multibot_cmd_vel_max_lin_;
+            max_ang = multibot_cmd_vel_max_ang_;
+            break;
+
+        default:
+            max_lin = 0.0;
+            max_ang = 0.0;
+            break;
         }
-        else // ackermann
+    }
+
+    void publishCommand(const geometry_msgs::msg::Twist &cmd)
+    {
+        switch (control_mode_)
         {
-            max_lin = frontbot_ack_max_lin_;
-            max_ang = frontbot_ack_max_ang_;
+        case ControlMode::REARBOT_INDEPENDENT:
+            rearbot_cmd_pub_->publish(cmd); // /cmd_vel
+            break;
+
+        case ControlMode::FRONTBOT_INDEPENDENT:
+            frontbot_cmd_pub_->publish(cmd); // /front/cmd_vel
+            break;
+
+        case ControlMode::MULTIBOT_ACKERMANN:
+            rearbot_cmd_pub_->publish(cmd); // /cmd_vel
+            break;
+
+        default:
+            break;
         }
     }
 
@@ -201,14 +245,10 @@ private:
             joy_mode_active_ = !joy_mode_active_;
             publishJoyMode();
 
-            if (joy_mode_active_)
-            {
-                RCLCPP_INFO(this->get_logger(), "Control Input Mode Switched: [ JOYSTICK ]");
-            }
-            else
-            {
-                RCLCPP_INFO(this->get_logger(), "Control Input Mode Switched: [ NAVIGATION ]");
-            }
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Control Input Mode Switched: [%s]",
+                joy_mode_active_ ? "JOYSTICK" : "NAVIGATION");
 
             x_btn_once_ = false;
         }
@@ -217,26 +257,12 @@ private:
             x_btn_once_ = true;
         }
 
-        if (robot_type_ == RobotType::FRONTBOT)
+        if (button_ps == 1 && ps_btn_once_)
         {
-            if (button_ps == 1 && ps_btn_once_)
-            {
-                docking_state_ = !docking_state_;
-                publishDockingState();
-
-                RCLCPP_INFO(
-                    this->get_logger(),
-                    "Frontbot Drive Mode Switched: %s",
-                    docking_state_ ? "ACKERMANN" : "DIFFERENTIAL");
-
-                ps_btn_once_ = false;
-            }
-            else if (button_ps == 0)
-            {
-                ps_btn_once_ = true;
-            }
+            nextControlMode();
+            ps_btn_once_ = false;
         }
-        else
+        else if (button_ps == 0)
         {
             ps_btn_once_ = true;
         }
@@ -271,7 +297,8 @@ private:
             cmd.linear.x = linear_axis * max_lin;
             cmd.angular.z = angular_axis * max_ang;
 
-            if (std::abs(cmd.linear.x) < 1e-9 && std::abs(cmd.angular.z) < 1e-9)
+            if (std::abs(cmd.linear.x) < 1e-9 &&
+                std::abs(cmd.angular.z) < 1e-9)
             {
                 is_zero = true;
             }
@@ -282,14 +309,11 @@ private:
             return;
         }
 
-        pub_->publish(cmd);
+        publishCommand(cmd);
         cmd_vel_was_zero_ = is_zero;
 
-        std::cout << "\rRobot: " << robotTypeToString(robot_type_)
-                  << "  Mode: "
-                  << (robot_type_ == RobotType::FRONTBOT
-                          ? (docking_state_ ? "ACKERMANN" : "DIFFERENTIAL")
-                          : "REARBOT")
+        std::cout << "\rMode: " << controlModeToString(control_mode_)
+                  << "  Docked: " << (isDockedMode() ? "true" : "false")
                   << "  Linear: " << cmd.linear.x
                   << "  Angular: " << cmd.angular.z
                   << "   " << std::flush;

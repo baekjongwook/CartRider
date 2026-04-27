@@ -14,37 +14,42 @@ def generate_launch_description():
     vesc_pkg_share = get_package_share_directory("cartrider_vesc_sdk")
 
     frontbot_param_file = os.path.join(controller_pkg_share, "param", "frontbot.yaml")
+    rearbot_param_file = os.path.join(controller_pkg_share, "param", "rearbot.yaml")
 
     rmd_launch_file = os.path.join(rmd_pkg_share, "launch", "bringup.launch.py")
-
     vesc_launch_file = os.path.join(vesc_pkg_share, "launch", "bringup.launch.py")
+
+    front_rmd_bringup = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(rmd_launch_file),
+        launch_arguments={
+            "namespace": "front",
+            "override_param_file": frontbot_param_file,
+        }.items(),
+    )
+
+    front_vesc_bringup = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(vesc_launch_file),
+        launch_arguments={
+            "namespace": "front",
+            "override_param_file": frontbot_param_file,
+        }.items(),
+    )
 
     frontbot_node = Node(
         package="cartrider_drive_controller",
         executable="frontbot_control_node",
         name="frontbot_control_node",
-        parameters=[frontbot_param_file],
+        parameters=[
+            frontbot_param_file,
+            rearbot_param_file,
+        ],
         output="screen",
-    )
-
-    rmd_bringup = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(rmd_launch_file),
-        launch_arguments={
-            "override_param_file": frontbot_param_file,
-        }.items(),
-    )
-
-    vesc_bringup = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(vesc_launch_file),
-        launch_arguments={
-            "override_param_file": frontbot_param_file,
-        }.items(),
     )
 
     return LaunchDescription(
         [
-            rmd_bringup,
-            vesc_bringup,
+            front_rmd_bringup,
+            front_vesc_bringup,
             frontbot_node,
         ]
     )

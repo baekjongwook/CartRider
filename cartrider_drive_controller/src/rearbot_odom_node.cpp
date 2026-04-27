@@ -6,10 +6,15 @@
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
 #include <tf2/LinearMath/Quaternion.hpp>
-#include <tf2_ros/transform_broadcaster.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <cartrider_rmd_sdk/msg/motor_state_array.hpp>
+
+#include <cmath>
+#include <memory>
+#include <stdexcept>
+#include <vector>
 
 class RearbotOdomNode : public rclcpp::Node
 {
@@ -19,36 +24,40 @@ public:
         x_(0.0), y_(0.0), theta_(0.0),
         initialized_(false)
   {
-    r_ = this->declare_parameter<double>("wheel_radius");
-    L_ = this->declare_parameter<double>("track_width");
+    r_ = this->declare_parameter<double>("rear_wheel_radius");
+    L_ = this->declare_parameter<double>("rear_track_width");
 
     rmd_motor_ids_ =
-        this->declare_parameter<std::vector<int64_t>>("rmd_motor_ids", std::vector<int64_t>{});
+        this->declare_parameter<std::vector<int64_t>>("rear_rmd_motor_ids", std::vector<int64_t>{});
 
     if (rmd_motor_ids_.size() != 2)
     {
       RCLCPP_FATAL(
           this->get_logger(),
-          "Parameter 'rmd_motor_ids' must contain exactly 2 elements. Got %zu",
+          "Parameter 'rear_rmd_motor_ids' must contain exactly 2 elements. Got %zu",
           rmd_motor_ids_.size());
-      throw std::runtime_error("Invalid rmd_motor_ids size");
+      throw std::runtime_error("Invalid rear_rmd_motor_ids size");
     }
 
     left_id_ = static_cast<int>(rmd_motor_ids_[0]);
     right_id_ = static_cast<int>(rmd_motor_ids_[1]);
 
-    sub_ = create_subscription<cartrider_rmd_sdk::msg::MotorStateArray>(
+    sub_ = this->create_subscription<cartrider_rmd_sdk::msg::MotorStateArray>(
         "rmd_state",
         10,
         std::bind(&RearbotOdomNode::stateCallback, this, std::placeholders::_1));
 
-    odom_pub_ = create_publisher<nav_msgs::msg::Odometry>(
+    odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>(
         "odom",
         10);
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-    RCLCPP_INFO(get_logger(), "Rearbot Odom Node Started");
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Rearbot Odom Node Started. rear_wheel_radius=%.4f, rear_track_width=%.4f",
+        r_,
+        L_);
   }
 
 private:
@@ -75,9 +84,11 @@ private:
     }
 
     if (!left_found || !right_found)
+    {
       return;
+    }
 
-    rclcpp::Time now = this->now();
+    const rclcpp::Time now = this->now();
 
     if (!initialized_)
     {
@@ -88,36 +99,40 @@ private:
       return;
     }
 
-    double dt = (now - prev_time_).seconds();
+    const double dt = (now - prev_time_).seconds();
     if (dt <= 0.0)
+    {
       return;
+    }
 
-    double dtheta_left = left_pos - prev_left_;
-    double dtheta_right = right_pos - prev_right_;
+    const double dtheta_left = left_pos - prev_left_;
+    const double dtheta_right = right_pos - prev_right_;
 
     prev_left_ = left_pos;
     prev_right_ = right_pos;
     prev_time_ = now;
 
-    double ds_left = -r_ * dtheta_left;
-    double ds_right = r_ * dtheta_right;
+    // Motor sign convention matched with rearbot_control_node:
+    // left command uses negative sign, right command uses positive sign.
+    const double ds_left = -r_ * dtheta_left;
+    const double ds_right = r_ * dtheta_right;
 
-    double ds = (ds_left + ds_right) / 2.0;
-    double dtheta = (ds_right - ds_left) / L_;
+    const double ds = (ds_left + ds_right) / 2.0;
+    const double dtheta = (ds_right - ds_left) / L_;
 
     x_ += ds * std::cos(theta_ + dtheta / 2.0);
     y_ += ds * std::sin(theta_ + dtheta / 2.0);
     theta_ += dtheta;
     theta_ = std::atan2(std::sin(theta_), std::cos(theta_));
 
-    double vx = ds / dt;
-    double vtheta = dtheta / dt;
+    const double vx = ds / dt;
+    const double vtheta = dtheta / dt;
 
     publishOdom(now, vx, vtheta);
     publishTF(now);
   }
 
-  void publishOdom(rclcpp::Time stamp, double vx, double vtheta)
+  void publishOdom(const rclcpp::Time &stamp, double vx, double vtheta)
   {
     nav_msgs::msg::Odometry odom;
 
@@ -130,7 +145,7 @@ private:
     odom.pose.pose.position.z = 0.0;
 
     tf2::Quaternion q;
-    q.setRPY(0, 0, theta_);
+    q.setRPY(0.0, 0.0, theta_);
 
     odom.pose.pose.orientation.x = q.x();
     odom.pose.pose.orientation.y = q.y();
@@ -150,7 +165,7 @@ private:
     odom_pub_->publish(odom);
   }
 
-  void publishTF(rclcpp::Time stamp)
+  void publishTF(const rclcpp::Time &stamp)
   {
     geometry_msgs::msg::TransformStamped tf;
 
@@ -163,7 +178,7 @@ private:
     tf.transform.translation.z = 0.0;
 
     tf2::Quaternion q;
-    q.setRPY(0, 0, theta_);
+    q.setRPY(0.0, 0.0, theta_);
 
     tf.transform.rotation.x = q.x();
     tf.transform.rotation.y = q.y();
@@ -173,16 +188,24 @@ private:
     tf_broadcaster_->sendTransform(tf);
   }
 
-  double r_;
-  double L_;
-  std::vector<int64_t> rmd_motor_ids_;
-  int left_id_;
-  int right_id_;
+private:
+  double r_{0.0};
+  double L_{0.0};
 
-  double x_, y_, theta_;
-  double prev_left_, prev_right_;
+  std::vector<int64_t> rmd_motor_ids_;
+
+  int left_id_{0};
+  int right_id_{0};
+
+  double x_{0.0};
+  double y_{0.0};
+  double theta_{0.0};
+
+  double prev_left_{0.0};
+  double prev_right_{0.0};
+
   rclcpp::Time prev_time_;
-  bool initialized_;
+  bool initialized_{false};
 
   rclcpp::Subscription<cartrider_rmd_sdk::msg::MotorStateArray>::SharedPtr sub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;

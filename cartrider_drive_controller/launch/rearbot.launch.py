@@ -13,12 +13,12 @@ def generate_launch_description():
     rmd_pkg_share = get_package_share_directory("cartrider_rmd_sdk")
 
     rearbot_param_file = os.path.join(controller_pkg_share, "param", "rearbot.yaml")
-
     rmd_launch_file = os.path.join(rmd_pkg_share, "launch", "bringup.launch.py")
 
     rearbot_node = Node(
         package="cartrider_drive_controller",
         executable="rearbot_control_node",
+        namespace="rear",
         name="rearbot_control_node",
         parameters=[rearbot_param_file],
         output="screen",
@@ -27,6 +27,7 @@ def generate_launch_description():
     odom_node = Node(
         package="cartrider_drive_controller",
         executable="rearbot_odom_node",
+        namespace="rear",
         name="rearbot_odom_node",
         parameters=[rearbot_param_file],
         output="screen",
@@ -35,6 +36,7 @@ def generate_launch_description():
     rmd_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(rmd_launch_file),
         launch_arguments={
+            "namespace": "rear",
             "override_param_file": rearbot_param_file,
         }.items(),
     )

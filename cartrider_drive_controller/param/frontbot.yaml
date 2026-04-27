@@ -16,10 +16,14 @@
     vesc_motor_gear_ratio: [35.0, 35.0]
     vesc_pole_pairs: [4, 4]
 
-    vesc_position_min: [-75.0, -75.0] #degree
+    vesc_position_min: [-60.0, -60.0] #degree
     vesc_position_max: [60.0, 60.0]
     vesc_position_zero_offset: [295.0, 287.0]
 
-    wheel_radius: 0.0635 # m
-    track_width: 0.265 # m
-    wheel_base: 0.260 # m
+    front_rmd_motor_ids: [1, 2]
+    front_vesc_motor_ids: [3, 4]
+
+    front_wheel_radius: 0.0635 # m
+    front_track_width: 0.265 # m
+    
+    wheel_base: 0.480 # m

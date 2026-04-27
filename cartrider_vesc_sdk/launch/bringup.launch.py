@@ -12,6 +12,12 @@ def generate_launch_description():
         get_package_share_directory("cartrider_vesc_sdk"), "param", "motors.yaml"
     )
 
+    namespace_arg = DeclareLaunchArgument(
+        "namespace",
+        default_value="",
+        description="Namespace for the VESC hardware node.",
+    )
+
     override_param_file_arg = DeclareLaunchArgument(
         "override_param_file",
         default_value=default_param_file,
@@ -21,7 +27,8 @@ def generate_launch_description():
     hardware_node = Node(
         package="cartrider_vesc_sdk",
         executable="hardware_node",
-        name="hardware_node",
+        namespace=LaunchConfiguration("namespace"),
+        name="vesc_hardware_node",
         parameters=[
             default_param_file,
             LaunchConfiguration("override_param_file"),
@@ -31,6 +38,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            namespace_arg,
             override_param_file_arg,
             hardware_node,
         ]

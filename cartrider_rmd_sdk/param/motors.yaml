@@ -1,4 +1,4 @@
-hardware_node:
+/**:
   ros__parameters:
     rmd_can_interface: "can_front_rmd"
     rmd_motor_ids: [1, 2]

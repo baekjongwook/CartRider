@@ -7,14 +7,14 @@ teleop_joystick:
   ros__parameters:
     robot_type: "frontbot"
 
-    rearbot_max_lin: 0.5
-    rearbot_max_ang: 0.2
+    rearbot_cmd_vel_max_lin: 0.2
+    rearbot_cmd_vel_max_ang: 1.0
 
-    frontbot_diff_max_lin: 0.2
-    frontbot_diff_max_ang: 1.0
+    frontbot_cmd_vel_max_lin: 0.2
+    frontbot_cmd_vel_max_ang: 1.0
 
-    frontbot_ack_max_lin: 0.1
-    frontbot_ack_max_ang: 0.1
+    multibot_cmd_vel_max_lin: 0.1
+    multibot_cmd_vel_max_ang: 0.1
 
     linear_axis_index: 1
     angular_axis_index: 3

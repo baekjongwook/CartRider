@@ -1,4 +1,4 @@
-hardware_node:
+/**:
   ros__parameters:
     vesc_can_interface: "can_front_vesc"
     vesc_motor_ids: [3, 4]

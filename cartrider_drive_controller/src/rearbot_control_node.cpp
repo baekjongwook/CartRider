@@ -14,19 +14,19 @@ public:
   RearbotControlNode()
       : Node("rearbot_control_node")
   {
-    r_ = this->declare_parameter<double>("wheel_radius");
-    L_ = this->declare_parameter<double>("track_width");
+    r_ = this->declare_parameter<double>("rear_wheel_radius");
+    L_ = this->declare_parameter<double>("rear_track_width");
 
     rmd_motor_ids_ =
-        this->declare_parameter<std::vector<int64_t>>("rmd_motor_ids", std::vector<int64_t>{});
+        this->declare_parameter<std::vector<int64_t>>("rear_rmd_motor_ids", std::vector<int64_t>{});
 
     if (rmd_motor_ids_.size() != 2)
     {
       RCLCPP_FATAL(
           this->get_logger(),
-          "Parameter 'rmd_motor_ids' must contain exactly 2 elements. Got %zu",
+          "Parameter 'rear_rmd_motor_ids' must contain exactly 2 elements. Got %zu",
           rmd_motor_ids_.size());
-      throw std::runtime_error("Invalid rmd_motor_ids size");
+      throw std::runtime_error("Invalid rear_rmd_motor_ids size");
     }
 
     left_id_ = static_cast<int>(rmd_motor_ids_[0]);
@@ -49,15 +49,25 @@ public:
         10,
         std::bind(&RearbotControlNode::joySigCallback, this, std::placeholders::_1));
 
+    docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "/docking_state",
+        10,
+        std::bind(&RearbotControlNode::dockingStateCallback, this, std::placeholders::_1));
+
     command_pub_ = this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>(
         "rmd_command",
         10);
 
-    RCLCPP_INFO(this->get_logger(), "Rearbot Control Node Started. Default Mode: JOYSTICK");
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Rearbot Control Node Started. Default Mode: JOYSTICK, rear_wheel_radius=%.4f, rear_track_width=%.4f",
+        r_,
+        L_);
   }
 
 private:
   bool joy_mode_active_{true};
+  bool docking_state_{false};
 
   std::unique_ptr<vehicle_kinematics::DifferentialDrive> diff_;
 
@@ -72,6 +82,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_joy_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
+
   rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr command_pub_;
 
 private:
@@ -89,12 +101,29 @@ private:
     }
   }
 
+  void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (docking_state_ == msg->data)
+    {
+      return;
+    }
+
+    docking_state_ = msg->data;
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Docking State Changed: %s",
+        docking_state_ ? "DOCKED - rearbot independent controller disabled"
+                       : "UNDOCKED - rearbot independent controller enabled");
+  }
+
   void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
   {
     if (joy_mode_active_)
     {
       return;
     }
+
     handleCommand(msg, "NAV");
   }
 
@@ -104,6 +133,7 @@ private:
     {
       return;
     }
+
     handleCommand(msg, "JOY");
   }
 
@@ -111,6 +141,18 @@ private:
       const geometry_msgs::msg::Twist::SharedPtr msg,
       const std::string &source)
   {
+    if (docking_state_)
+    {
+      RCLCPP_INFO_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          1000,
+          "[%s] Docked state: rearbot independent cmd_vel ignored. "
+          "Rear wheels are controlled by frontbot 2WS-4WD controller.",
+          source.c_str());
+      return;
+    }
+
     const auto output = diff_->compute(msg->linear.x, msg->angular.z);
 
     const double left_radps = -output.left_w;
@@ -118,7 +160,7 @@ private:
 
     RCLCPP_INFO(
         this->get_logger(),
-        "[%s] cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
+        "[%s][DIFF] cmd_vel: v=%.3f [m/s]  w=%.3f [rad/s]  ->  left=%.3f [rad/s]  right=%.3f [rad/s]",
         source.c_str(),
         msg->linear.x,
         msg->angular.z,
