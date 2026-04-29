@@ -1,6 +1,6 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
-// Modified: joystick publishes only cmd_vel_joy
+// Modified: rearbot uses no namespace, frontbot uses /front namespace
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -24,7 +24,7 @@ public:
     Teleop() : Node("teleop_joystick")
     {
         rearbot_cmd_joy_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
-            "/rear/cmd_vel_joy",
+            "/cmd_vel_joy",
             10);
 
         frontbot_cmd_joy_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
@@ -32,7 +32,7 @@ public:
             10);
 
         rear_joy_sig_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "/rear/joy_control_sig",
+            "/joy_control_sig",
             10);
 
         front_joy_sig_pub_ = this->create_publisher<std_msgs::msg::Bool>(
@@ -229,6 +229,7 @@ private:
             break;
 
         case ControlMode::MULTIBOT_ACKERMANN:
+            rearbot_cmd_joy_pub_->publish(cmd);
             frontbot_cmd_joy_pub_->publish(cmd);
             break;
 
@@ -278,6 +279,7 @@ private:
         {
             ps_btn_once_ = true;
         }
+
         if (button_x)
         {
             cmd.linear.x = 0.0;
