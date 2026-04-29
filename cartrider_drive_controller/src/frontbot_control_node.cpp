@@ -62,18 +62,28 @@ public:
             front_wheel_radius_,
             rear_wheel_radius_);
 
-        cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+        front_cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "cmd_vel",
             10,
-            std::bind(&FrontbotControlNode::cmdCallback, this, std::placeholders::_1));
+            std::bind(&FrontbotControlNode::frontCmdCallback, this, std::placeholders::_1));
 
-        cmd_joy_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "cmd_vel_joy",
+        multibot_cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            "/cmd_vel", 
             10,
-            std::bind(&FrontbotControlNode::cmdJoyCallback, this, std::placeholders::_1));
+            std::bind(&FrontbotControlNode::multibotCmdCallback, this, std::placeholders::_1));
+
+        front_cmd_joy_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            "cmd_vel_joy", 
+            10,
+            std::bind(&FrontbotControlNode::frontCmdJoyCallback, this, std::placeholders::_1));
+
+        multibot_cmd_joy_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            "/cmd_vel_joy", 
+            10,
+            std::bind(&FrontbotControlNode::multibotCmdJoyCallback, this, std::placeholders::_1));
 
         joy_sig_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "joy_control_sig",
+            "joy_control_sig", 
             10,
             std::bind(&FrontbotControlNode::joySigCallback, this, std::placeholders::_1));
 
@@ -119,8 +129,12 @@ private:
     int front_left_vesc_id_{0};
     int front_right_vesc_id_{0};
 
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_joy_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr front_cmd_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr multibot_cmd_sub_;
+
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr front_cmd_joy_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr multibot_cmd_joy_sub_;
+
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
 
@@ -174,38 +188,64 @@ private:
             driveModeToString(drive_mode_).c_str());
     }
 
-    void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+    void frontCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
         if (joy_mode_active_)
         {
             return;
         }
 
-        handleCommand(msg, "NAV");
+        if (drive_mode_ != DriveMode::DIFFERENTIAL)
+        {
+            return;
+        }
+
+        publishDifferentialCommand(msg, "NAV_FRONT");
     }
 
-    void cmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+    void multibotCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+    {
+        if (joy_mode_active_)
+        {
+            return;
+        }
+
+        if (drive_mode_ != DriveMode::ACKERMANN)
+        {
+            return;
+        }
+
+        publishAckermannCommand(msg, "NAV_MULTIBOT");
+    }
+
+    void frontCmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
         if (!joy_mode_active_)
         {
             return;
         }
 
-        handleCommand(msg, "JOY");
+        if (drive_mode_ != DriveMode::DIFFERENTIAL)
+        {
+            return;
+        }
+
+        publishDifferentialCommand(msg, "JOY_FRONT");
     }
 
-    void handleCommand(
-        const geometry_msgs::msg::Twist::SharedPtr msg,
-        const std::string &source)
+    void multibotCmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (drive_mode_ == DriveMode::ACKERMANN)
+        if (!joy_mode_active_)
         {
-            publishAckermannCommand(msg, source);
+            return;
         }
-        else
+
+        if (drive_mode_ != DriveMode::ACKERMANN)
         {
-            publishDifferentialCommand(msg, source);
+            return;
         }
+
+        publishAckermannCommand(msg, "JOY_MULTIBOT");
     }
 
     void publishDifferentialCommand(

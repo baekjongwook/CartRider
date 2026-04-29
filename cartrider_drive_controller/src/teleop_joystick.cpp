@@ -230,7 +230,6 @@ private:
 
         case ControlMode::MULTIBOT_ACKERMANN:
             rearbot_cmd_joy_pub_->publish(cmd);
-            frontbot_cmd_joy_pub_->publish(cmd);
             break;
 
         default:
