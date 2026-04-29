@@ -86,6 +86,7 @@ add_executable(teleop_joystick
 
 ament_target_dependencies(teleop_joystick
   rclcpp
+  std_msgs
   sensor_msgs
   geometry_msgs
 )
