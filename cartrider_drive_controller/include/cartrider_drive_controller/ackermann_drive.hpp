@@ -46,10 +46,11 @@ namespace vehicle_kinematics
 
         TwoWSFourWDOutput compute(double linear_vel, double angular_vel) const
         {
-            constexpr double kMinLinearVel = 0.05;  // m/s
-            constexpr double kAngularEps = 1e-6;    // rad/s
-            constexpr double kMaxCurvature = 2.0;   // 1/m
-            constexpr double kMaxSteerAngle = 0.60; // rad, 약 34.4 deg
+            constexpr double kMinLinearVel = 0.05;
+            constexpr double kAngularEps = 1e-6;
+
+            constexpr double kMaxCurvature = 3.0;
+            constexpr double kMaxSteerAngle = 0.90; //rad
 
             TwoWSFourWDOutput out{};
 
@@ -58,14 +59,19 @@ namespace vehicle_kinematics
                 return out;
             }
 
+            double effective_angular_vel = angular_vel;
+            if (linear_vel < 0.0)
+            {
+                effective_angular_vel = -effective_angular_vel;
+            }
+
             const double max_angular_vel = std::abs(linear_vel) * kMaxCurvature;
-            angular_vel = std::clamp(
-                angular_vel,
+            effective_angular_vel = std::clamp(
+                effective_angular_vel,
                 -max_angular_vel,
                 max_angular_vel);
 
-
-            if (std::abs(angular_vel) < kAngularEps)
+            if (std::abs(effective_angular_vel) < kAngularEps)
             {
                 out.front_left_steer = 0.0;
                 out.front_right_steer = 0.0;
@@ -87,9 +93,9 @@ namespace vehicle_kinematics
             const double y_rear_left = rear_track_width_ / 2.0;
             const double y_rear_right = -rear_track_width_ / 2.0;
 
-            const double v_fl_x = linear_vel - angular_vel * y_front_left;
-            const double v_fr_x = linear_vel - angular_vel * y_front_right;
-            const double v_f_y = angular_vel * x_front;
+            const double v_fl_x = linear_vel - effective_angular_vel * y_front_left;
+            const double v_fr_x = linear_vel - effective_angular_vel * y_front_right;
+            const double v_f_y = effective_angular_vel * x_front;
 
             out.front_left_steer = std::atan2(v_f_y, v_fl_x);
             out.front_right_steer = std::atan2(v_f_y, v_fr_x);
@@ -110,8 +116,8 @@ namespace vehicle_kinematics
                 -kMaxSteerAngle,
                 kMaxSteerAngle);
 
-            const double v_rl = linear_vel - angular_vel * y_rear_left;
-            const double v_rr = linear_vel - angular_vel * y_rear_right;
+            const double v_rl = linear_vel - effective_angular_vel * y_rear_left;
+            const double v_rr = linear_vel - effective_angular_vel * y_rear_right;
 
             out.front_left_w = v_fl / front_wheel_radius_;
             out.front_right_w = v_fr / front_wheel_radius_;
