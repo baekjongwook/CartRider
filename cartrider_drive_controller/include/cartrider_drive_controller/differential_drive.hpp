@@ -41,17 +41,6 @@ public:
         return {w_left, w_right};
     }
 
-    ForwardOutput computeForward(double left_w, double right_w) const
-    {
-        double v_left  = left_w  * wheel_radius_;
-        double v_right = right_w * wheel_radius_;
-
-        double linear  = (v_left + v_right) / 2.0;
-        double angular = (v_right - v_left) / wheel_separation_;
-
-        return {linear, angular};
-    }
-
 private:
     double wheel_radius_;
     double wheel_separation_;

@@ -71,6 +71,27 @@ ament_target_dependencies(frontbot_control_node
   cartrider_vesc_sdk
 )
 
+add_executable(frontbot_odom_node
+  src/frontbot_odom_node.cpp
+)
+
+target_include_directories(frontbot_odom_node PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+ament_target_dependencies(frontbot_odom_node
+  rclcpp
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  nav_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  cartrider_rmd_sdk 
+)
+
+
 add_executable(teleop_keyboard
   src/teleop_keyboard.cpp
 )

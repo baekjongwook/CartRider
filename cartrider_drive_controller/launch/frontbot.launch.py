@@ -31,6 +31,15 @@ def generate_launch_description():
         output="screen",
     )
 
+    front_odom_node = Node(
+        package="cartrider_drive_controller",
+        executable="frontbot_odom_node",
+        namespace="front",
+        name="frontbot_odom_node",
+        parameters=[frontbot_param_file],
+        output="screen",
+    )
+
     front_rmd_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(rmd_launch_file),
         launch_arguments={
@@ -46,11 +55,12 @@ def generate_launch_description():
             "override_param_file": frontbot_param_file,
         }.items(),
     )
-    
+
     return LaunchDescription(
         [
             front_rmd_bringup,
             front_vesc_bringup,
             frontbot_node,
+            front_odom_node
         ]
     )
