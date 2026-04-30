@@ -28,8 +28,8 @@ public:
         r_ = this->declare_parameter<double>("front_wheel_radius");
         L_ = this->declare_parameter<double>("front_track_width");
 
-        odom_frame_id_ = this->declare_parameter<std::string>("odom_frame_id", "front/odom");
-        base_frame_id_ = this->declare_parameter<std::string>("base_frame_id", "front/base_link");
+        odom_frame_id_ = this->declare_parameter<std::string>("odom_frame_id", "odom");
+        base_frame_id_ = this->declare_parameter<std::string>("base_frame_id", "base_link");
 
         front_rmd_motor_ids_ =
             this->declare_parameter<std::vector<int64_t>>(
