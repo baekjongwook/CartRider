@@ -28,8 +28,8 @@ public:
         r_ = this->declare_parameter<double>("front_wheel_radius");
         L_ = this->declare_parameter<double>("front_track_width");
 
-        odom_frame_id_ = this->declare_parameter<std::string>("odom_frame_id", "odom");
-        base_frame_id_ = this->declare_parameter<std::string>("base_frame_id", "base_link");
+        odom_frame_id_ = this->declare_parameter<std::string>("odom_frame_id", "front/odom");
+        base_frame_id_ = this->declare_parameter<std::string>("base_frame_id", "front/base_link");
 
         front_rmd_motor_ids_ =
             this->declare_parameter<std::vector<int64_t>>(
@@ -94,12 +94,12 @@ public:
         right_gear_ratio_ = rmd_gear_ratio_[1];
 
         sub_ = this->create_subscription<cartrider_rmd_sdk::msg::MotorStateArray>(
-            "/front/rmd_state",
+            "rmd_state",
             10,
             std::bind(&FrontbotOdomNode::stateCallback, this, std::placeholders::_1));
 
         odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>(
-            "/front/odom",
+            "odom",
             10);
 
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
