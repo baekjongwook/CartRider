@@ -1,5 +1,5 @@
-// Rearbot Odom Node
-// 2026.03.05 백종욱
+// Frontbot Odom Node
+// 2026.04.30 백종욱
 
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -36,11 +36,6 @@ public:
                 "front_rmd_motor_ids",
                 std::vector<int64_t>{});
 
-        rmd_gear_ratio_ =
-            this->declare_parameter<std::vector<double>>(
-                "rmd_gear_ratio",
-                std::vector<double>{});
-
         if (front_rmd_motor_ids_.size() != 2)
         {
             RCLCPP_FATAL(
@@ -48,15 +43,6 @@ public:
                 "Parameter 'front_rmd_motor_ids' must contain exactly 2 elements. Got %zu",
                 front_rmd_motor_ids_.size());
             throw std::runtime_error("Invalid front_rmd_motor_ids size");
-        }
-
-        if (rmd_gear_ratio_.size() != 2)
-        {
-            RCLCPP_FATAL(
-                this->get_logger(),
-                "Parameter 'rmd_gear_ratio' must contain exactly 2 elements. Got %zu",
-                rmd_gear_ratio_.size());
-            throw std::runtime_error("Invalid rmd_gear_ratio size");
         }
 
         if (r_ <= 0.0)
@@ -77,21 +63,8 @@ public:
             throw std::runtime_error("Invalid front_track_width");
         }
 
-        if (rmd_gear_ratio_[0] <= 0.0 || rmd_gear_ratio_[1] <= 0.0)
-        {
-            RCLCPP_FATAL(
-                this->get_logger(),
-                "All elements of 'rmd_gear_ratio' must be positive. Got [%.4f, %.4f]",
-                rmd_gear_ratio_[0],
-                rmd_gear_ratio_[1]);
-            throw std::runtime_error("Invalid rmd_gear_ratio value");
-        }
-
         left_id_ = static_cast<int>(front_rmd_motor_ids_[0]);
         right_id_ = static_cast<int>(front_rmd_motor_ids_[1]);
-
-        left_gear_ratio_ = rmd_gear_ratio_[0];
-        right_gear_ratio_ = rmd_gear_ratio_[1];
 
         sub_ = this->create_subscription<cartrider_rmd_sdk::msg::MotorStateArray>(
             "rmd_state",
@@ -114,15 +87,13 @@ public:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "RMD IDs: left=%d, right=%d / gear_ratio: left=%.4f, right=%.4f",
+            "RMD IDs: left=%d, right=%d",
             left_id_,
-            right_id_,
-            left_gear_ratio_,
-            right_gear_ratio_);
+            right_id_);
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Frontbot Odom: sub=/front/rmd_state, pub=/front/odom, TF=%s -> %s",
+            "Frontbot Odom: sub=rmd_state, pub=odom, TF=%s -> %s",
             odom_frame_id_.c_str(),
             base_frame_id_.c_str());
     }
@@ -130,8 +101,8 @@ public:
 private:
     void stateCallback(const cartrider_rmd_sdk::msg::MotorStateArray::SharedPtr msg)
     {
-        double left_motor_pos = 0.0;
-        double right_motor_pos = 0.0;
+        double left_pos = 0.0;
+        double right_pos = 0.0;
 
         bool left_found = false;
         bool right_found = false;
@@ -140,12 +111,12 @@ private:
         {
             if (s.id == left_id_)
             {
-                left_motor_pos = s.position;
+                left_pos = s.position;
                 left_found = true;
             }
             else if (s.id == right_id_)
             {
-                right_motor_pos = s.position;
+                right_pos = s.position;
                 right_found = true;
             }
         }
@@ -159,8 +130,8 @@ private:
 
         if (!initialized_)
         {
-            prev_left_motor_pos_ = left_motor_pos;
-            prev_right_motor_pos_ = right_motor_pos;
+            prev_left_ = left_pos;
+            prev_right_ = right_pos;
             prev_time_ = now;
             initialized_ = true;
             return;
@@ -172,18 +143,15 @@ private:
             return;
         }
 
-        const double dtheta_left_motor = left_motor_pos - prev_left_motor_pos_;
-        const double dtheta_right_motor = right_motor_pos - prev_right_motor_pos_;
+        const double dtheta_left = left_pos - prev_left_;
+        const double dtheta_right = right_pos - prev_right_;
 
-        prev_left_motor_pos_ = left_motor_pos;
-        prev_right_motor_pos_ = right_motor_pos;
+        prev_left_ = left_pos;
+        prev_right_ = right_pos;
         prev_time_ = now;
 
-        const double dtheta_left_wheel = dtheta_left_motor / left_gear_ratio_;
-        const double dtheta_right_wheel = dtheta_right_motor / right_gear_ratio_;
-
-        const double ds_left = r_ * dtheta_left_wheel;
-        const double ds_right = -r_ * dtheta_right_wheel;
+        const double ds_left = r_ * dtheta_left;
+        const double ds_right = -r_ * dtheta_right;
 
         const double ds = (ds_left + ds_right) / 2.0;
         const double dtheta = (ds_right - ds_left) / L_;
@@ -265,20 +233,16 @@ private:
     std::string base_frame_id_{"front/base_link"};
 
     std::vector<int64_t> front_rmd_motor_ids_;
-    std::vector<double> rmd_gear_ratio_;
 
     int left_id_{0};
     int right_id_{0};
-
-    double left_gear_ratio_{1.0};
-    double right_gear_ratio_{1.0};
 
     double x_{0.0};
     double y_{0.0};
     double theta_{0.0};
 
-    double prev_left_motor_pos_{0.0};
-    double prev_right_motor_pos_{0.0};
+    double prev_left_{0.0};
+    double prev_right_{0.0};
 
     rclcpp::Time prev_time_;
     bool initialized_{false};

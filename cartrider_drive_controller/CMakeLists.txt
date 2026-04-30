@@ -116,6 +116,7 @@ install(TARGETS
   rearbot_control_node
   rearbot_odom_node
   frontbot_control_node
+  frontbot_odom_node
   teleop_keyboard
   teleop_joystick
   DESTINATION lib/${PROJECT_NAME}
