@@ -50,7 +50,7 @@ namespace vehicle_kinematics
             constexpr double kAngularEps = 1e-6;
 
             constexpr double kMaxCurvature = 3.0;
-            constexpr double kMaxSteerAngle = 0.90; //rad
+            constexpr double kMaxSteerAngle = 1.0; //rad
 
             TwoWSFourWDOutput out{};
 

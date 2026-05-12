@@ -51,7 +51,7 @@ HardwareNode::HardwareNode() : rclcpp::Node("hardware_node")
       std::bind(&HardwareNode::controlLoop, this));
 
   state_timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(50),
+      std::chrono::milliseconds(20),
       std::bind(&HardwareNode::stateLoop, this));
 
   subscription_ = this->create_subscription<cartrider_rmd_sdk::msg::MotorCommandArray>(

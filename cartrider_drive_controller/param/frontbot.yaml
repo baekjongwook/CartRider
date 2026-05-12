@@ -7,7 +7,7 @@
 
     rmd_speed_min: [-90.0, -90.0] # RPM
     rmd_speed_max: [90.0, 90.0]
-    rmd_speed_deadzone: [5.0, 5.0]
+    rmd_speed_deadzone: [3.0, 3.0]
 
     vesc_can_interface: "can_front_vesc"
     vesc_motor_ids: [3, 4]
@@ -18,12 +18,13 @@
 
     vesc_position_min: [-60.0, -60.0] #degree
     vesc_position_max: [60.0, 60.0]
-    vesc_position_zero_offset: [295.0, 287.0]
+    vesc_position_zero_offset: [115.0, 287.0]
 
     front_rmd_motor_ids: [1, 2]
     front_vesc_motor_ids: [3, 4]
 
     front_wheel_radius: 0.0635 # m
-    front_track_width: 0.265 # m
+    front_track_width: 0.250 # m
     
-    wheel_base: 0.480 # m
+    wheel_base: 1.45 # m
+    # wheel_base: 0.480 # m

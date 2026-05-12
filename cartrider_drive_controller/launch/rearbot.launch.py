@@ -47,7 +47,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             rmd_bringup,
-            rearbot_node,
-            odom_node,
+            rearbot_node
+            # odom_node,
         ]
     )

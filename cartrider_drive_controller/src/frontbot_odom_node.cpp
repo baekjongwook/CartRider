@@ -29,7 +29,7 @@ public:
         L_ = this->declare_parameter<double>("front_track_width");
 
         odom_frame_id_ = this->declare_parameter<std::string>("odom_frame_id", "front/odom");
-        base_frame_id_ = this->declare_parameter<std::string>("base_frame_id", "front/base_link");
+        base_frame_id_ = this->declare_parameter<std::string>("base_frame_id", "front/base_footprint");
 
         front_rmd_motor_ids_ =
             this->declare_parameter<std::vector<int64_t>>(
@@ -72,7 +72,7 @@ public:
             std::bind(&FrontbotOdomNode::stateCallback, this, std::placeholders::_1));
 
         odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>(
-            "odom",
+            "odom_wheel",
             10);
 
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -165,14 +165,15 @@ private:
         const double vtheta = dtheta / dt;
 
         publishOdom(now, vx, vtheta);
-        publishTF(now);
+        // publishTF(now);
     }
 
     void publishOdom(const rclcpp::Time &stamp, double vx, double vtheta)
     {
         nav_msgs::msg::Odometry odom;
 
-        odom.header.stamp = stamp;
+        odom.header.stamp = this->now();
+        // odom.header.stamp = stamp;
         odom.header.frame_id = odom_frame_id_;
         odom.child_frame_id = base_frame_id_;
 
@@ -230,7 +231,7 @@ private:
     double L_{0.0};
 
     std::string odom_frame_id_{"front/odom"};
-    std::string base_frame_id_{"front/base_link"};
+    std::string base_frame_id_{"front/base_footprint"};
 
     std::vector<int64_t> front_rmd_motor_ids_;
 
