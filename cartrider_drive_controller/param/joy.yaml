@@ -11,8 +11,8 @@ teleop_joystick:
     frontbot_cmd_vel_max_lin: 0.2
     frontbot_cmd_vel_max_ang: 1.0
 
-    multibot_cmd_vel_max_lin: 0.1
-    multibot_cmd_vel_max_ang: 0.1
+    multibot_cmd_vel_max_lin: 0.2
+    multibot_cmd_vel_max_ang: 0.2
 
     linear_axis_index: 1
     angular_axis_index: 3
