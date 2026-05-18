@@ -1,5 +1,6 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
+// Modified: rearbot uses no namespace, frontbot uses /front namespace
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
