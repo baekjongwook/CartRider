@@ -12,12 +12,14 @@ def generate_launch_description():
     controller_pkg_share = get_package_share_directory("cartrider_drive_controller")
     rmd_pkg_share = get_package_share_directory("cartrider_rmd_sdk")
     vesc_pkg_share = get_package_share_directory("cartrider_vesc_sdk")
+    mightyzap_pkg_share = get_package_share_directory("cartrider_mightyzap_sdk")
 
     frontbot_param_file = os.path.join(controller_pkg_share, "param", "frontbot.yaml")
     rearbot_param_file = os.path.join(controller_pkg_share, "param", "rearbot.yaml")
 
     rmd_launch_file = os.path.join(rmd_pkg_share, "launch", "bringup.launch.py")
     vesc_launch_file = os.path.join(vesc_pkg_share, "launch", "bringup.launch.py")
+    mightyzap_launch_file = os.path.join(mightyzap_pkg_share, "launch", "bringup.py")
 
     frontbot_node = Node(
         package="cartrider_drive_controller",
@@ -56,11 +58,20 @@ def generate_launch_description():
         }.items(),
     )
 
+    front_mightyzap_bringup = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(mightyzap_launch_file),
+        launch_arguments={
+            "namespace": "front",
+            "override_param_file": frontbot_param_file,
+        }.items(),
+    )
+
     return LaunchDescription(
         [
             front_rmd_bringup,
             front_vesc_bringup,
+            front_mightyzap_bringup,
             frontbot_node,
-            front_odom_node
+            front_odom_node,
         ]
     )

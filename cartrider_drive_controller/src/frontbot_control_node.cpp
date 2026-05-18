@@ -1,12 +1,21 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/u_int16.hpp>
 
 #include "cartrider_rmd_sdk/msg/motor_command_array.hpp"
 #include "cartrider_vesc_sdk/msg/motor_command_array.hpp"
 
 #include "cartrider_drive_controller/differential_drive.hpp"
 #include "cartrider_drive_controller/ackermann_drive.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 class FrontbotControlNode : public rclcpp::Node
 {
@@ -15,6 +24,13 @@ public:
     {
         DIFFERENTIAL,
         ACKERMANN
+    };
+
+    enum class DockingCommandMode
+    {
+        IDLE,
+        DOCKING,
+        UNDOCKING
     };
 
     FrontbotControlNode()
@@ -30,6 +46,24 @@ public:
             this->declare_parameter<std::vector<int64_t>>("front_rmd_motor_ids", std::vector<int64_t>{});
         front_vesc_motor_ids_ =
             this->declare_parameter<std::vector<int64_t>>("front_vesc_motor_ids", std::vector<int64_t>{});
+
+        mightyzap_docking_speed_ =
+            this->declare_parameter<int>("mightyzap_docking_speed", 500);
+        mightyzap_docking_position_ =
+            this->declare_parameter<int>("mightyzap_docking_position", 3000);
+        mightyzap_release_position_ =
+            this->declare_parameter<int>("mightyzap_release_position", 0);
+        mightyzap_position_tolerance_ =
+            this->declare_parameter<int>("mightyzap_position_tolerance", 20);
+
+        mightyzap_docking_speed_ =
+            std::clamp(mightyzap_docking_speed_, 0, 1023);
+        mightyzap_docking_position_ =
+            std::clamp(mightyzap_docking_position_, 0, 4095);
+        mightyzap_release_position_ =
+            std::clamp(mightyzap_release_position_, 0, 4095);
+        mightyzap_position_tolerance_ =
+            std::clamp(mightyzap_position_tolerance_, 0, 4095);
 
         if (front_rmd_motor_ids_.size() != 2)
         {
@@ -50,6 +84,7 @@ public:
         front_right_vesc_id_ = static_cast<int>(front_vesc_motor_ids_[1]);
 
         drive_mode_ = DriveMode::DIFFERENTIAL;
+        docking_command_mode_ = DockingCommandMode::IDLE;
 
         diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(
             front_wheel_radius_,
@@ -68,22 +103,22 @@ public:
             std::bind(&FrontbotControlNode::frontCmdCallback, this, std::placeholders::_1));
 
         multibot_cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/cmd_vel", 
+            "/cmd_vel",
             10,
             std::bind(&FrontbotControlNode::multibotCmdCallback, this, std::placeholders::_1));
 
         front_cmd_joy_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "cmd_vel_joy", 
+            "cmd_vel_joy",
             10,
             std::bind(&FrontbotControlNode::frontCmdJoyCallback, this, std::placeholders::_1));
 
         multibot_cmd_joy_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/cmd_vel_joy", 
+            "/cmd_vel_joy",
             10,
             std::bind(&FrontbotControlNode::multibotCmdJoyCallback, this, std::placeholders::_1));
 
         joy_sig_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "joy_control_sig", 
+            "joy_control_sig",
             10,
             std::bind(&FrontbotControlNode::joySigCallback, this, std::placeholders::_1));
 
@@ -91,6 +126,16 @@ public:
             "/docking_state",
             10,
             std::bind(&FrontbotControlNode::dockingStateCallback, this, std::placeholders::_1));
+
+        do_docking_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "do_docking",
+            10,
+            std::bind(&FrontbotControlNode::doDockingCallback, this, std::placeholders::_1));
+
+        mightyzap_position_sub_ = this->create_subscription<std_msgs::msg::UInt16>(
+            "present_position",
+            10,
+            std::bind(&FrontbotControlNode::mightyZapPositionCallback, this, std::placeholders::_1));
 
         front_rmd_command_pub_ =
             this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>(
@@ -102,15 +147,49 @@ public:
                 "vesc_command",
                 10);
 
+        mightyzap_force_enable_pub_ =
+            this->create_publisher<std_msgs::msg::Bool>(
+                "force_enable",
+                10);
+
+        mightyzap_goal_speed_pub_ =
+            this->create_publisher<std_msgs::msg::UInt16>(
+                "goal_speed",
+                10);
+
+        mightyzap_goal_position_pub_ =
+            this->create_publisher<std_msgs::msg::UInt16>(
+                "goal_position",
+                10);
+
+        docking_state_pub_ =
+            this->create_publisher<std_msgs::msg::Bool>(
+                "/docking_state",
+                10);
+
+        publishDockingState(false);
+
         RCLCPP_INFO(
             this->get_logger(),
             "Frontbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s",
             driveModeToString(drive_mode_).c_str());
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "mightyZAP Params: docking_speed=%d docking_position=%d release_position=%d tolerance=%d",
+            mightyzap_docking_speed_,
+            mightyzap_docking_position_,
+            mightyzap_release_position_,
+            mightyzap_position_tolerance_);
     }
 
 private:
     bool joy_mode_active_{true};
+    bool docking_state_{false};
+    bool mightyzap_position_valid_{false};
+
     DriveMode drive_mode_{DriveMode::DIFFERENTIAL};
+    DockingCommandMode docking_command_mode_{DockingCommandMode::IDLE};
 
     std::unique_ptr<vehicle_kinematics::DifferentialDrive> diff_;
     std::unique_ptr<vehicle_kinematics::TwoWSFourWDDrive> two_ws_four_wd_;
@@ -129,6 +208,14 @@ private:
     int front_left_vesc_id_{0};
     int front_right_vesc_id_{0};
 
+    int mightyzap_docking_speed_{500};
+    int mightyzap_docking_position_{3000};
+    int mightyzap_release_position_{0};
+    int mightyzap_position_tolerance_{20};
+    int mightyzap_active_target_position_{0};
+
+    uint16_t mightyzap_present_position_{0};
+
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr front_cmd_sub_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr multibot_cmd_sub_;
 
@@ -137,9 +224,16 @@ private:
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr do_docking_sub_;
+    rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr mightyzap_position_sub_;
 
     rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr front_rmd_command_pub_;
     rclcpp::Publisher<cartrider_vesc_sdk::msg::MotorCommandArray>::SharedPtr front_vesc_command_pub_;
+
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr mightyzap_force_enable_pub_;
+    rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr mightyzap_goal_speed_pub_;
+    rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr mightyzap_goal_position_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr docking_state_pub_;
 
 private:
     std::string driveModeToString(DriveMode mode) const
@@ -150,6 +244,21 @@ private:
             return "DIFFERENTIAL";
         case DriveMode::ACKERMANN:
             return "ACKERMANN";
+        default:
+            return "UNKNOWN";
+        }
+    }
+
+    std::string dockingCommandModeToString(DockingCommandMode mode) const
+    {
+        switch (mode)
+        {
+        case DockingCommandMode::IDLE:
+            return "IDLE";
+        case DockingCommandMode::DOCKING:
+            return "DOCKING";
+        case DockingCommandMode::UNDOCKING:
+            return "UNDOCKING";
         default:
             return "UNKNOWN";
         }
@@ -172,6 +281,8 @@ private:
 
     void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
     {
+        docking_state_ = msg->data;
+
         const DriveMode new_mode =
             msg->data ? DriveMode::ACKERMANN : DriveMode::DIFFERENTIAL;
 
@@ -188,8 +299,171 @@ private:
             driveModeToString(drive_mode_).c_str());
     }
 
+    void doDockingCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        if (msg->data)
+        {
+            if (docking_state_ && docking_command_mode_ == DockingCommandMode::IDLE)
+            {
+                RCLCPP_INFO(this->get_logger(), "[DOCKING] Already docked. Ignoring do_docking=true.");
+                return;
+            }
+
+            startDockingMotion(
+                DockingCommandMode::DOCKING,
+                mightyzap_docking_position_);
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[DOCKING] Docking started. target=%d speed=%d tolerance=%d",
+                mightyzap_active_target_position_,
+                mightyzap_docking_speed_,
+                mightyzap_position_tolerance_);
+        }
+        else
+        {
+            if (!docking_state_ && docking_command_mode_ == DockingCommandMode::IDLE)
+            {
+                RCLCPP_INFO(this->get_logger(), "[DOCKING] Already released. Ignoring do_docking=false.");
+                return;
+            }
+
+            startDockingMotion(
+                DockingCommandMode::UNDOCKING,
+                mightyzap_release_position_);
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[DOCKING] Undocking started. target=%d speed=%d tolerance=%d",
+                mightyzap_active_target_position_,
+                mightyzap_docking_speed_,
+                mightyzap_position_tolerance_);
+        }
+    }
+
+    void startDockingMotion(
+        DockingCommandMode mode,
+        int target_position)
+    {
+        docking_command_mode_ = mode;
+        mightyzap_active_target_position_ =
+            std::clamp(target_position, 0, 4095);
+
+        publishFrontCommand(0.0, 0.0, 0.0, 0.0);
+        publishMightyZapCommand(
+            mightyzap_docking_speed_,
+            mightyzap_active_target_position_,
+            true);
+    }
+
+    void mightyZapPositionCallback(const std_msgs::msg::UInt16::SharedPtr msg)
+    {
+        mightyzap_present_position_ = msg->data;
+        mightyzap_position_valid_ = true;
+
+        if (docking_command_mode_ == DockingCommandMode::IDLE)
+        {
+            return;
+        }
+
+        const int error =
+            std::abs(static_cast<int>(mightyzap_present_position_) - mightyzap_active_target_position_);
+
+        if (error > mightyzap_position_tolerance_)
+        {
+            return;
+        }
+
+        const DockingCommandMode completed_mode = docking_command_mode_;
+        docking_command_mode_ = DockingCommandMode::IDLE;
+
+        if (completed_mode == DockingCommandMode::DOCKING)
+        {
+            docking_state_ = true;
+            publishDockingState(true);
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[DOCKING] Docking complete. present=%u target=%d error=%d tolerance=%d",
+                mightyzap_present_position_,
+                mightyzap_active_target_position_,
+                error,
+                mightyzap_position_tolerance_);
+        }
+        else if (completed_mode == DockingCommandMode::UNDOCKING)
+        {
+            docking_state_ = false;
+            publishDockingState(false);
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[DOCKING] Undocking complete. present=%u target=%d error=%d tolerance=%d",
+                mightyzap_present_position_,
+                mightyzap_active_target_position_,
+                error,
+                mightyzap_position_tolerance_);
+        }
+    }
+
+    void publishMightyZapCommand(
+        int speed,
+        int position,
+        bool force_enable)
+    {
+        std_msgs::msg::Bool force_msg;
+        force_msg.data = force_enable;
+        mightyzap_force_enable_pub_->publish(force_msg);
+
+        std_msgs::msg::UInt16 speed_msg;
+        speed_msg.data = static_cast<uint16_t>(
+            std::clamp(speed, 0, 1023));
+        mightyzap_goal_speed_pub_->publish(speed_msg);
+
+        std_msgs::msg::UInt16 position_msg;
+        position_msg.data = static_cast<uint16_t>(
+            std::clamp(position, 0, 4095));
+        mightyzap_goal_position_pub_->publish(position_msg);
+    }
+
+    void publishDockingState(bool state)
+    {
+        std_msgs::msg::Bool msg;
+        msg.data = state;
+        docking_state_pub_->publish(msg);
+    }
+
+    bool isDockingMotionActive() const
+    {
+        return docking_command_mode_ != DockingCommandMode::IDLE;
+    }
+
+    bool blockDriveCommandDuringDocking(const std::string &source)
+    {
+        if (!isDockingMotionActive())
+        {
+            return false;
+        }
+
+        publishFrontCommand(0.0, 0.0, 0.0, 0.0);
+
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            1000,
+            "[%s] Drive command blocked while docking command is active. mode=%s",
+            source.c_str(),
+            dockingCommandModeToString(docking_command_mode_).c_str());
+
+        return true;
+    }
+
     void frontCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
+        if (blockDriveCommandDuringDocking("NAV_FRONT"))
+        {
+            return;
+        }
+
         if (joy_mode_active_)
         {
             return;
@@ -205,6 +479,11 @@ private:
 
     void multibotCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
+        if (blockDriveCommandDuringDocking("NAV_MULTIBOT"))
+        {
+            return;
+        }
+
         if (joy_mode_active_)
         {
             return;
@@ -220,6 +499,11 @@ private:
 
     void frontCmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
+        if (blockDriveCommandDuringDocking("JOY_FRONT"))
+        {
+            return;
+        }
+
         if (!joy_mode_active_)
         {
             return;
@@ -235,6 +519,11 @@ private:
 
     void multibotCmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
+        if (blockDriveCommandDuringDocking("JOY_MULTIBOT"))
+        {
+            return;
+        }
+
         if (!joy_mode_active_)
         {
             return;
