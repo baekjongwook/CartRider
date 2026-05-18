@@ -48,7 +48,7 @@ public:
     {
         constexpr double kMinLinearVel = 0.05;
         constexpr double kAngularEps = 1e-6;
-        constexpr double kMaxCurvature = 1.5;
+        constexpr double kMaxCurvature = 1.0;
 
         TwoWSFourWDOutput out{};
 
