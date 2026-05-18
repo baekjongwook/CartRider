@@ -1,6 +1,5 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
-// Modified: rearbot uses no namespace, frontbot uses /front namespace
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -134,6 +133,12 @@ private:
     bool isDockedMode() const
     {
         return control_mode_ == ControlMode::MULTIBOT_ACKERMANN;
+    }
+
+    bool isDifferentialMode() const
+    {
+        return control_mode_ == ControlMode::REARBOT_INDEPENDENT ||
+               control_mode_ == ControlMode::FRONTBOT_INDEPENDENT;
     }
 
     void publishJoyMode()
@@ -308,6 +313,11 @@ private:
 
             cmd.linear.x = linear_axis * max_lin;
             cmd.angular.z = angular_axis * max_ang;
+
+            if (isDifferentialMode() && cmd.linear.x < 0.0)
+            {
+                cmd.angular.z = -cmd.angular.z;
+            }
 
             if (std::abs(cmd.linear.x) < 1e-9 &&
                 std::abs(cmd.angular.z) < 1e-9)
