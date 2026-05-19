@@ -43,11 +43,14 @@ struct MightyZapStatusCache
 {
     bool position_valid{false};
     bool voltage_valid{false};
+    bool operating_rate_valid{false};
 
     uint16_t position_raw{0};
     double position_normalized{0.0};
 
     double voltage_v{0.0};
+
+    uint16_t operating_rate_raw{0};
 
     rclcpp::Time last_update;
 };
@@ -70,6 +73,9 @@ struct ActuatorUnit
 
     uint16_t position_tolerance{20};
 
+    uint16_t safe_position{2700};
+    uint16_t operating_rate_limit{500};
+
     bool force_enabled{false};
     bool stopped{true};
 
@@ -78,6 +84,9 @@ struct ActuatorUnit
 
     bool motion_active{false};
     bool target_reached{false};
+
+    bool fault_active{false};
+    bool safety_return_active{false};
 
     rclcpp::Time motion_done_time;
 
@@ -106,6 +115,9 @@ private:
     void positionControl(ActuatorUnit &actuator);
     void checkMotionCompletionTimeout();
 
+    void startSafetyReturn(ActuatorUnit &actuator, uint16_t operating_rate);
+    void publishFault(bool fault);
+
     bool echo(int id);
     bool forceEnable(int id, bool enable);
     bool sendGoalPosition(int id, uint16_t position);
@@ -113,6 +125,7 @@ private:
 
     bool readPresentPosition(int id, uint16_t &position);
     bool readPresentVoltage(int id, double &voltage);
+    bool readPresentOperatingRate(int id, uint16_t &operating_rate);
 
     bool store1Byte(int id, uint8_t address, uint8_t value);
     bool store2Byte(int id, uint8_t address, uint16_t value);
@@ -145,6 +158,7 @@ private:
     static constexpr uint8_t ADDR_FORCE_ON_OFF = 0x80;
     static constexpr uint8_t ADDR_GOAL_POSITION = 0x86;
     static constexpr uint8_t ADDR_PRESENT_POSITION = 0x8C;
+    static constexpr uint8_t ADDR_PRESENT_OPERATING_RATE = 0x90;
     static constexpr uint8_t ADDR_PRESENT_VOLTAGE = 0x92;
 
     static constexpr uint8_t ADDR_GOAL_SPEED = 0x15;
@@ -175,4 +189,6 @@ private:
 
     rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr present_position_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr present_voltage_pub_;
+    rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr present_operating_rate_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr fault_pub_;
 };

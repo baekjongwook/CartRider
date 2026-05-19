@@ -9,11 +9,17 @@ hardware_node:
 
     mightyzap_position_min: 0
     mightyzap_position_max: 4095
-    mightyzap_initial_position: 0
     mightyzap_position_tolerance: 20
+
+    mightyzap_initial_position: 2700
 
     mightyzap_speed_min: 0
     mightyzap_speed_max: 1023
-    mightyzap_initial_speed: 500
+
+    mightyzap_initial_speed: 600
+
+    mightyzap_safe_position: 2700
+
+    mightyzap_operating_rate_limit: 600
 
     mightyzap_force_on_at_start: true

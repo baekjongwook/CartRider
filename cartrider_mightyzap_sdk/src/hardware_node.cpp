@@ -27,6 +27,8 @@ namespace
     constexpr uint16_t MIGHTYZAP_POSITION_MAX = 4095;
     constexpr uint16_t MIGHTYZAP_SPEED_MIN = 0;
     constexpr uint16_t MIGHTYZAP_SPEED_MAX = 1023;
+    constexpr uint16_t MIGHTYZAP_OPERATING_RATE_MIN = 0;
+    constexpr uint16_t MIGHTYZAP_OPERATING_RATE_MAX = 1023;
 
     speed_t toTermiosBaudrate(int baudrate)
     {
@@ -189,12 +191,15 @@ HardwareNode::HardwareNode()
 
     this->declare_parameter("mightyzap_position_min", 0);
     this->declare_parameter("mightyzap_position_max", 4095);
-    this->declare_parameter("mightyzap_initial_position", 0);
     this->declare_parameter("mightyzap_position_tolerance", 20);
+    this->declare_parameter("mightyzap_initial_position", 2700);
 
     this->declare_parameter("mightyzap_speed_min", 0);
     this->declare_parameter("mightyzap_speed_max", 1023);
-    this->declare_parameter("mightyzap_initial_speed", 500);
+    this->declare_parameter("mightyzap_initial_speed", 600);
+
+    this->declare_parameter("mightyzap_safe_position", 2700);
+    this->declare_parameter("mightyzap_operating_rate_limit", 500);
 
     this->declare_parameter("mightyzap_force_on_at_start", true);
 
@@ -243,6 +248,8 @@ HardwareNode::HardwareNode()
 
     present_position_pub_ = this->create_publisher<UInt16>("present_position", 10);
     present_voltage_pub_ = this->create_publisher<Float32>("present_voltage", 10);
+    present_operating_rate_pub_ = this->create_publisher<UInt16>("present_operating_rate", 10);
+    fault_pub_ = this->create_publisher<Bool>("mightyzap_fault", 10);
 
     RCLCPP_INFO(
         this->get_logger(),
@@ -292,6 +299,8 @@ HardwareNode::HardwareNode()
             }
         }
     }
+
+    publishFault(false);
 }
 
 HardwareNode::~HardwareNode()
@@ -314,12 +323,15 @@ void HardwareNode::createActuatorsFromParameters()
 
     int position_min = this->get_parameter("mightyzap_position_min").as_int();
     int position_max = this->get_parameter("mightyzap_position_max").as_int();
-    int initial_position = this->get_parameter("mightyzap_initial_position").as_int();
     int position_tolerance = this->get_parameter("mightyzap_position_tolerance").as_int();
+    int initial_position = this->get_parameter("mightyzap_initial_position").as_int();
 
     int speed_min = this->get_parameter("mightyzap_speed_min").as_int();
     int speed_max = this->get_parameter("mightyzap_speed_max").as_int();
     int initial_speed = this->get_parameter("mightyzap_initial_speed").as_int();
+
+    int safe_position = this->get_parameter("mightyzap_safe_position").as_int();
+    int operating_rate_limit = this->get_parameter("mightyzap_operating_rate_limit").as_int();
 
     ActuatorUnit unit;
 
@@ -331,8 +343,9 @@ void HardwareNode::createActuatorsFromParameters()
     if (position_min > position_max)
         std::swap(position_min, position_max);
 
-    initial_position = std::clamp(initial_position, position_min, position_max);
     position_tolerance = std::clamp(position_tolerance, 0, 4095);
+    initial_position = std::clamp(initial_position, position_min, position_max);
+    safe_position = std::clamp(safe_position, position_min, position_max);
 
     speed_min = std::clamp(speed_min, 0, 1023);
     speed_max = std::clamp(speed_max, 0, 1023);
@@ -342,14 +355,22 @@ void HardwareNode::createActuatorsFromParameters()
 
     initial_speed = std::clamp(initial_speed, speed_min, speed_max);
 
+    operating_rate_limit = std::clamp(
+        operating_rate_limit,
+        static_cast<int>(MIGHTYZAP_OPERATING_RATE_MIN),
+        static_cast<int>(MIGHTYZAP_OPERATING_RATE_MAX));
+
     unit.position_min = static_cast<uint16_t>(position_min);
     unit.position_max = static_cast<uint16_t>(position_max);
-    unit.initial_position = static_cast<uint16_t>(initial_position);
     unit.position_tolerance = static_cast<uint16_t>(position_tolerance);
+    unit.initial_position = static_cast<uint16_t>(initial_position);
 
     unit.speed_min = static_cast<uint16_t>(speed_min);
     unit.speed_max = static_cast<uint16_t>(speed_max);
     unit.speed_limit = static_cast<uint16_t>(initial_speed);
+
+    unit.safe_position = static_cast<uint16_t>(safe_position);
+    unit.operating_rate_limit = static_cast<uint16_t>(operating_rate_limit);
 
     unit.target_position = unit.initial_position;
     unit.last_sent_position = unit.position_min;
@@ -362,6 +383,10 @@ void HardwareNode::createActuatorsFromParameters()
 
     unit.motion_active = true;
     unit.target_reached = false;
+
+    unit.fault_active = false;
+    unit.safety_return_active = false;
+
     unit.motion_done_time = this->now();
 
     actuators_.push_back(unit);
@@ -370,15 +395,17 @@ void HardwareNode::createActuatorsFromParameters()
 
     RCLCPP_INFO(
         this->get_logger(),
-        "[INIT] mightyZAP id=%d | position[%u, %u] initial_position=%u tolerance=%u | speed[%u, %u] initial_speed=%u",
+        "[INIT] mightyZAP id=%d | position[%u, %u] initial=%u safe=%u tolerance=%u | speed[%u, %u] initial=%u | operating_rate_limit=%u",
         unit.id,
         unit.position_min,
         unit.position_max,
         unit.initial_position,
+        unit.safe_position,
         unit.position_tolerance,
         unit.speed_min,
         unit.speed_max,
-        unit.speed_limit);
+        unit.speed_limit,
+        unit.operating_rate_limit);
 }
 
 void HardwareNode::controlLoop()
@@ -433,6 +460,7 @@ void HardwareNode::stateLoop()
         for (auto &actuator : actuators_)
         {
             uint16_t position = 0;
+            uint16_t operating_rate = 0;
             double voltage = 0.0;
 
             if (readPresentPosition(actuator.id, position))
@@ -461,17 +489,35 @@ void HardwareNode::stateLoop()
 
                     RCLCPP_INFO(
                         this->get_logger(),
-                        "[STATE] Target reached id=%d position=%u target=%u error=%d tolerance=%u",
+                        "[STATE] Target reached id=%d position=%u target=%u error=%d tolerance=%u safety_return=%s",
                         actuator.id,
                         position,
                         actuator.target_position,
                         error,
-                        actuator.position_tolerance);
+                        actuator.position_tolerance,
+                        actuator.safety_return_active ? "true" : "false");
                 }
 
                 UInt16 msg;
                 msg.data = position;
                 present_position_pub_->publish(msg);
+            }
+
+            if (readPresentOperatingRate(actuator.id, operating_rate))
+            {
+                actuator.state.operating_rate_raw = operating_rate;
+                actuator.state.operating_rate_valid = true;
+                actuator.state.last_update = this->now();
+
+                UInt16 msg;
+                msg.data = operating_rate;
+                present_operating_rate_pub_->publish(msg);
+
+                if (!actuator.safety_return_active &&
+                    operating_rate > actuator.operating_rate_limit)
+                {
+                    startSafetyReturn(actuator, operating_rate);
+                }
             }
 
             if (readPresentVoltage(actuator.id, voltage))
@@ -521,10 +567,11 @@ void HardwareNode::checkMotionCompletionTimeout()
 
         RCLCPP_WARN(
             this->get_logger(),
-            "[IDLE_OFF] Target reached and idle %.1f ms > %d ms. Force off id=%d",
+            "[IDLE_OFF] Target reached and idle %.1f ms > %d ms. Force off id=%d safety_return=%s",
             idle_ms,
             command_timeout_ms_,
-            actuator.id);
+            actuator.id,
+            actuator.safety_return_active ? "true" : "false");
 
         if (forceEnable(actuator.id, false))
         {
@@ -534,12 +581,66 @@ void HardwareNode::checkMotionCompletionTimeout()
             actuator.position_command_pending = false;
             actuator.motion_active = false;
             actuator.target_reached = false;
+            actuator.safety_return_active = false;
         }
         else
         {
             RCLCPP_WARN(this->get_logger(), "[IDLE_OFF] Force off failed id=%d", actuator.id);
         }
     }
+}
+
+void HardwareNode::startSafetyReturn(ActuatorUnit &actuator, uint16_t operating_rate)
+{
+    actuator.fault_active = true;
+    actuator.safety_return_active = true;
+
+    actuator.target_position = actuator.safe_position;
+    actuator.position_command_pending = true;
+    actuator.command_received = true;
+    actuator.stopped = false;
+
+    actuator.motion_active = true;
+    actuator.target_reached = false;
+    actuator.motion_done_time = this->now();
+
+    if (!actuator.force_enabled)
+    {
+        if (forceEnable(actuator.id, true))
+        {
+            actuator.force_enabled = true;
+        }
+        else
+        {
+            RCLCPP_WARN(this->get_logger(), "[SAFETY] Force enable failed id=%d", actuator.id);
+        }
+    }
+
+    if (!sendGoalSpeed(actuator.id, actuator.speed_limit))
+    {
+        RCLCPP_WARN(
+            this->get_logger(),
+            "[SAFETY] Failed to set speed id=%d speed=%u",
+            actuator.id,
+            actuator.speed_limit);
+    }
+
+    publishFault(true);
+
+    RCLCPP_ERROR(
+        this->get_logger(),
+        "[SAFETY] Operating rate exceeded id=%d rate=%u limit=%u. Returning to safe_position=%u",
+        actuator.id,
+        operating_rate,
+        actuator.operating_rate_limit,
+        actuator.safe_position);
+}
+
+void HardwareNode::publishFault(bool fault)
+{
+    Bool msg;
+    msg.data = fault;
+    fault_pub_->publish(msg);
 }
 
 void HardwareNode::attemptReconnect()
@@ -597,6 +698,7 @@ void HardwareNode::shutdownAllActuators()
             actuator.position_command_pending = false;
             actuator.motion_active = false;
             actuator.target_reached = false;
+            actuator.safety_return_active = false;
         }
         catch (...)
         {
@@ -633,9 +735,10 @@ void HardwareNode::positionControl(ActuatorUnit &actuator)
 
     RCLCPP_INFO(
         this->get_logger(),
-        "[CTRL] Goal position sent id=%d target=%u",
+        "[CTRL] Goal position sent id=%d target=%u safety_return=%s",
         actuator.id,
-        target_position);
+        target_position,
+        actuator.safety_return_active ? "true" : "false");
 }
 
 void HardwareNode::goalPositionCallback(const UInt16::SharedPtr msg)
@@ -661,6 +764,10 @@ void HardwareNode::goalPositionCallback(const UInt16::SharedPtr msg)
     actuator.motion_active = true;
     actuator.target_reached = false;
     actuator.motion_done_time = this->now();
+
+    actuator.safety_return_active = false;
+    actuator.fault_active = false;
+    publishFault(false);
 
     if (!actuator.force_enabled)
     {
@@ -759,6 +866,7 @@ void HardwareNode::forceEnableCallback(const Bool::SharedPtr msg)
         actuator.target_reached = false;
         actuator.command_received = false;
         actuator.position_command_pending = false;
+        actuator.safety_return_active = false;
     }
 
     last_command_time_ = this->now();
@@ -1101,6 +1209,28 @@ bool HardwareNode::readPresentPosition(int id, uint16_t &position)
     position =
         static_cast<uint16_t>(data[0]) |
         static_cast<uint16_t>(data[1] << 8);
+
+    return true;
+}
+
+bool HardwareNode::readPresentOperatingRate(int id, uint16_t &operating_rate)
+{
+    std::vector<uint8_t> data;
+
+    if (!loadData(id, ADDR_PRESENT_OPERATING_RATE, 2, data))
+        return false;
+
+    if (data.size() < 2)
+        return false;
+
+    operating_rate =
+        static_cast<uint16_t>(data[0]) |
+        static_cast<uint16_t>(data[1] << 8);
+
+    operating_rate = std::clamp<uint16_t>(
+        operating_rate,
+        MIGHTYZAP_OPERATING_RATE_MIN,
+        MIGHTYZAP_OPERATING_RATE_MAX);
 
     return true;
 }

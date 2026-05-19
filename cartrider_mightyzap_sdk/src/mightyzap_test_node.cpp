@@ -54,11 +54,22 @@ public:
         {
             std::cout << "\n========== mightyZAP Test ==========\n";
             std::cout << "Actuator ID: " << actuator_id_ << "\n";
+            std::cout << "Position range: " << position_min_ << " ~ " << position_max_ << "\n";
+            std::cout << "Speed range: " << speed_min_ << " ~ " << speed_max_ << "\n";
+            std::cout << "Initial position: " << initial_position_ << "\n";
+            std::cout << "Initial speed: " << initial_speed_ << "\n";
+            std::cout << "Safe position: " << safe_position_ << "\n";
+            std::cout << "Operating rate limit: " << operating_rate_limit_ << "\n";
+            std::cout << "------------------------------------\n";
             std::cout << "1. Force ON\n";
             std::cout << "2. Force OFF\n";
             std::cout << "3. Set Goal Speed\n";
             std::cout << "4. Set Goal Position\n";
             std::cout << "5. Set Speed + Position\n";
+            std::cout << "6. Go Initial Position\n";
+            std::cout << "7. Go Safe Position\n";
+            std::cout << "8. Send Current Speed Again\n";
+            std::cout << "9. Send Current Position Again\n";
             std::cout << "q. Quit\n";
             std::cout << "Select: ";
 
@@ -101,19 +112,10 @@ public:
             }
             else if (input == "3")
             {
-                int speed = 0;
-
-                std::cout << "Enter goal speed [raw] ("
-                          << speed_min_ << " ~ " << speed_max_ << "): ";
-
-                std::cin >> speed;
-
-                if (!std::cin)
-                {
-                    clearInput();
-                    RCLCPP_WARN(get_logger(), "Invalid speed input. Try again.");
-                    continue;
-                }
+                int speed = readIntFromConsole(
+                    "Enter goal speed [raw] (" +
+                    std::to_string(speed_min_) + " ~ " +
+                    std::to_string(speed_max_) + "): ");
 
                 speed = std::clamp(speed, speed_min_, speed_max_);
 
@@ -127,19 +129,10 @@ public:
             }
             else if (input == "4")
             {
-                int position = 0;
-
-                std::cout << "Enter goal position [raw] ("
-                          << position_min_ << " ~ " << position_max_ << "): ";
-
-                std::cin >> position;
-
-                if (!std::cin)
-                {
-                    clearInput();
-                    RCLCPP_WARN(get_logger(), "Invalid position input. Try again.");
-                    continue;
-                }
+                int position = readIntFromConsole(
+                    "Enter goal position [raw] (" +
+                    std::to_string(position_min_) + " ~ " +
+                    std::to_string(position_max_) + "): ");
 
                 position = std::clamp(position, position_min_, position_max_);
 
@@ -153,50 +146,98 @@ public:
             }
             else if (input == "5")
             {
-                int speed = 0;
-                int position = 0;
+                int speed = readIntFromConsole(
+                    "Enter goal speed [raw] (" +
+                    std::to_string(speed_min_) + " ~ " +
+                    std::to_string(speed_max_) + "): ");
 
-                std::cout << "Enter goal speed [raw] ("
-                          << speed_min_ << " ~ " << speed_max_ << "): ";
-
-                std::cin >> speed;
-
-                if (!std::cin)
-                {
-                    clearInput();
-                    RCLCPP_WARN(get_logger(), "Invalid speed input. Try again.");
-                    continue;
-                }
-
-                std::cout << "Enter goal position [raw] ("
-                          << position_min_ << " ~ " << position_max_ << "): ";
-
-                std::cin >> position;
-
-                if (!std::cin)
-                {
-                    clearInput();
-                    RCLCPP_WARN(get_logger(), "Invalid position input. Try again.");
-                    continue;
-                }
+                int position = readIntFromConsole(
+                    "Enter goal position [raw] (" +
+                    std::to_string(position_min_) + " ~ " +
+                    std::to_string(position_max_) + "): ");
 
                 speed = std::clamp(speed, speed_min_, speed_max_);
                 position = std::clamp(position, position_min_, position_max_);
 
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
+
+                    force_enabled_ = true;
                     current_speed_ = static_cast<uint16_t>(speed);
                     current_position_ = static_cast<uint16_t>(position);
 
+                    force_msg_dirty_ = true;
                     speed_msg_dirty_ = true;
                     position_msg_dirty_ = true;
                 }
 
                 RCLCPP_INFO(
                     get_logger(),
-                    "Goal speed=%d, goal position=%d updated.",
+                    "Force ON, goal speed=%d, goal position=%d updated.",
                     speed,
                     position);
+            }
+            else if (input == "6")
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+
+                    force_enabled_ = true;
+                    current_speed_ = static_cast<uint16_t>(
+                        std::clamp(initial_speed_, speed_min_, speed_max_));
+                    current_position_ = static_cast<uint16_t>(
+                        std::clamp(initial_position_, position_min_, position_max_));
+
+                    force_msg_dirty_ = true;
+                    speed_msg_dirty_ = true;
+                    position_msg_dirty_ = true;
+                }
+
+                RCLCPP_INFO(
+                    get_logger(),
+                    "Go initial position requested. speed=%d position=%d",
+                    initial_speed_,
+                    initial_position_);
+            }
+            else if (input == "7")
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+
+                    force_enabled_ = true;
+                    current_speed_ = static_cast<uint16_t>(
+                        std::clamp(initial_speed_, speed_min_, speed_max_));
+                    current_position_ = static_cast<uint16_t>(
+                        std::clamp(safe_position_, position_min_, position_max_));
+
+                    force_msg_dirty_ = true;
+                    speed_msg_dirty_ = true;
+                    position_msg_dirty_ = true;
+                }
+
+                RCLCPP_INFO(
+                    get_logger(),
+                    "Go safe position requested. speed=%d position=%d",
+                    initial_speed_,
+                    safe_position_);
+            }
+            else if (input == "8")
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    speed_msg_dirty_ = true;
+                }
+
+                RCLCPP_INFO(get_logger(), "Current speed publish requested.");
+            }
+            else if (input == "9")
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    position_msg_dirty_ = true;
+                }
+
+                RCLCPP_INFO(get_logger(), "Current position publish requested.");
             }
             else
             {
@@ -228,10 +269,13 @@ private:
             position_min_ = params["mightyzap_position_min"].as<int>();
             position_max_ = params["mightyzap_position_max"].as<int>();
             initial_position_ = params["mightyzap_initial_position"].as<int>();
+            safe_position_ = params["mightyzap_safe_position"].as<int>();
 
             speed_min_ = params["mightyzap_speed_min"].as<int>();
             speed_max_ = params["mightyzap_speed_max"].as<int>();
             initial_speed_ = params["mightyzap_initial_speed"].as<int>();
+
+            operating_rate_limit_ = params["mightyzap_operating_rate_limit"].as<int>();
 
             validateParameters();
 
@@ -243,14 +287,16 @@ private:
 
             RCLCPP_INFO(
                 this->get_logger(),
-                "[YAML] actuator_id=%d position[%d, %d] initial_position=%d speed[%d, %d] initial_speed=%d",
+                "[YAML] actuator_id=%d position[%d, %d] initial_position=%d safe_position=%d speed[%d, %d] initial_speed=%d operating_rate_limit=%d",
                 actuator_id_,
                 position_min_,
                 position_max_,
                 initial_position_,
+                safe_position_,
                 speed_min_,
                 speed_max_,
-                initial_speed_);
+                initial_speed_,
+                operating_rate_limit_);
         }
         catch (const std::exception &e)
         {
@@ -271,6 +317,7 @@ private:
             std::swap(position_min_, position_max_);
 
         initial_position_ = std::clamp(initial_position_, position_min_, position_max_);
+        safe_position_ = std::clamp(safe_position_, position_min_, position_max_);
 
         speed_min_ = std::clamp(speed_min_, 0, 1023);
         speed_max_ = std::clamp(speed_max_, 0, 1023);
@@ -279,6 +326,8 @@ private:
             std::swap(speed_min_, speed_max_);
 
         initial_speed_ = std::clamp(initial_speed_, speed_min_, speed_max_);
+
+        operating_rate_limit_ = std::clamp(operating_rate_limit_, 0, 1023);
     }
 
     void publishLoop()
@@ -345,6 +394,22 @@ private:
         position_pub_->publish(msg);
     }
 
+    int readIntFromConsole(const std::string &prompt)
+    {
+        int value = 0;
+
+        std::cout << prompt;
+        std::cin >> value;
+
+        if (!std::cin)
+        {
+            clearInput();
+            throw std::runtime_error("Invalid integer input.");
+        }
+
+        return value;
+    }
+
     void clearInput()
     {
         std::cin.clear();
@@ -360,15 +425,18 @@ private:
 
     int position_min_{0};
     int position_max_{4095};
-    int initial_position_{0};
+    int initial_position_{2700};
+    int safe_position_{2700};
 
     int speed_min_{0};
     int speed_max_{1023};
-    int initial_speed_{500};
+    int initial_speed_{600};
+
+    int operating_rate_limit_{500};
 
     bool force_enabled_{false};
-    uint16_t current_speed_{500};
-    uint16_t current_position_{0};
+    uint16_t current_speed_{600};
+    uint16_t current_position_{2700};
 
     bool force_msg_dirty_{false};
     bool speed_msg_dirty_{false};
@@ -386,7 +454,15 @@ int main(int argc, char **argv)
     auto node = std::make_shared<MightyZapTestNode>();
 
     std::thread input_thread([&]()
-                             { node->run(); });
+                             {
+                                 try
+                                 {
+                                     node->run();
+                                 }
+                                 catch (const std::exception &e)
+                                 {
+                                     RCLCPP_ERROR(node->get_logger(), "Test node input loop error: %s", e.what());
+                                 } });
 
     rclcpp::spin(node);
     rclcpp::shutdown();

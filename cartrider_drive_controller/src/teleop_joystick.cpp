@@ -1,6 +1,9 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
-// Modified: rearbot uses no namespace, frontbot uses /front namespace
+// Modified: mightyZAP action buttons added
+// button 1: home
+// button 2: cart_docking
+// button 3: robot_docking
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -39,9 +42,22 @@ public:
             "/front/joy_control_sig",
             10);
 
-        docking_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "/docking_state",
+        home_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/front/home",
             10);
+
+        cart_docking_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/front/cart_docking",
+            10);
+
+        robot_docking_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/front/robot_docking",
+            10);
+
+        docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/docking_state",
+            10,
+            std::bind(&Teleop::dockingStateCallback, this, std::placeholders::_1));
 
         sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
             "/joy",
@@ -73,6 +89,13 @@ public:
         ps_button_index_ =
             this->declare_parameter<int>("ps_button_index");
 
+        home_button_index_ =
+            this->declare_parameter<int>("home_button_index", 1);
+        cart_docking_button_index_ =
+            this->declare_parameter<int>("cart_docking_button_index", 2);
+        robot_docking_button_index_ =
+            this->declare_parameter<int>("robot_docking_button_index", 3);
+
         publishInitialStates();
 
         RCLCPP_INFO(
@@ -80,6 +103,13 @@ public:
             "Joystick Teleop Started. Initial Mode: %s, Joy Input Mode: %s",
             controlModeToString(control_mode_).c_str(),
             joy_mode_active_ ? "JOYSTICK" : "NAVIGATION");
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "mightyZAP buttons: home=%d cart_docking=%d robot_docking=%d",
+            home_button_index_,
+            cart_docking_button_index_,
+            robot_docking_button_index_);
     }
 
 private:
@@ -88,15 +118,24 @@ private:
 
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rear_joy_sig_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr front_joy_sig_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr docking_state_pub_;
 
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr home_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr cart_docking_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr robot_docking_pub_;
+
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
 
     bool cmd_vel_was_zero_{true};
     bool joy_mode_active_{true};
+    bool docking_state_{false};
 
     bool x_btn_once_{true};
     bool ps_btn_once_{true};
+
+    bool home_btn_once_{true};
+    bool cart_docking_btn_once_{true};
+    bool robot_docking_btn_once_{true};
 
     ControlMode control_mode_{ControlMode::REARBOT_INDEPENDENT};
 
@@ -114,6 +153,10 @@ private:
 
     int x_button_index_{0};
     int ps_button_index_{10};
+
+    int home_button_index_{1};
+    int cart_docking_button_index_{2};
+    int robot_docking_button_index_{3};
 
 private:
     std::string controlModeToString(ControlMode mode) const
@@ -142,6 +185,18 @@ private:
                control_mode_ == ControlMode::FRONTBOT_INDEPENDENT;
     }
 
+    int getButton(
+        const sensor_msgs::msg::Joy::SharedPtr msg,
+        int index) const
+    {
+        if (index < 0 || index >= static_cast<int>(msg->buttons.size()))
+        {
+            return 0;
+        }
+
+        return msg->buttons[index];
+    }
+
     void publishJoyMode()
     {
         std_msgs::msg::Bool msg;
@@ -151,18 +206,33 @@ private:
         front_joy_sig_pub_->publish(msg);
     }
 
-    void publishDockingState()
-    {
-        std_msgs::msg::Bool msg;
-        msg.data = isDockedMode();
-
-        docking_state_pub_->publish(msg);
-    }
-
     void publishInitialStates()
     {
         publishJoyMode();
-        publishDockingState();
+    }
+
+    void publishBoolCommand(
+        const rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr &pub,
+        const std::string &name)
+    {
+        std_msgs::msg::Bool msg;
+        msg.data = true;
+        pub->publish(msg);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "mightyZAP manual command published: %s",
+            name.c_str());
+    }
+
+    void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        docking_state_ = msg->data;
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "docking_state updated from system: %s",
+            docking_state_ ? "true" : "false");
     }
 
     void nextControlMode()
@@ -187,13 +257,12 @@ private:
         }
 
         cmd_vel_was_zero_ = true;
-        publishDockingState();
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Joystick Control Mode Switched: [%s], docking_state=%s",
+            "Joystick Control Mode Switched: [%s], system docking_state=%s",
             controlModeToString(control_mode_).c_str(),
-            isDockedMode() ? "true" : "false");
+            docking_state_ ? "true" : "false");
     }
 
     void getCurrentGains(double &max_lin, double &max_ang) const
@@ -243,20 +312,52 @@ private:
         }
     }
 
+    void handleMightyZapButtons(const sensor_msgs::msg::Joy::SharedPtr msg)
+    {
+        const int button_home = getButton(msg, home_button_index_);
+        const int button_cart_docking = getButton(msg, cart_docking_button_index_);
+        const int button_robot_docking = getButton(msg, robot_docking_button_index_);
+
+        if (button_home == 1 && home_btn_once_)
+        {
+            publishBoolCommand(home_pub_, "home");
+            home_btn_once_ = false;
+        }
+        else if (button_home == 0)
+        {
+            home_btn_once_ = true;
+        }
+
+        if (button_cart_docking == 1 && cart_docking_btn_once_)
+        {
+            publishBoolCommand(cart_docking_pub_, "cart_docking");
+            cart_docking_btn_once_ = false;
+        }
+        else if (button_cart_docking == 0)
+        {
+            cart_docking_btn_once_ = true;
+        }
+
+        if (button_robot_docking == 1 && robot_docking_btn_once_)
+        {
+            publishBoolCommand(robot_docking_pub_, "robot_docking");
+            robot_docking_btn_once_ = false;
+        }
+        else if (button_robot_docking == 0)
+        {
+            robot_docking_btn_once_ = true;
+        }
+    }
+
     void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
     {
         geometry_msgs::msg::Twist cmd;
         bool is_zero = false;
 
-        const int button_x =
-            (x_button_index_ >= 0 && x_button_index_ < static_cast<int>(msg->buttons.size()))
-                ? msg->buttons[x_button_index_]
-                : 0;
+        handleMightyZapButtons(msg);
 
-        const int button_ps =
-            (ps_button_index_ >= 0 && ps_button_index_ < static_cast<int>(msg->buttons.size()))
-                ? msg->buttons[ps_button_index_]
-                : 0;
+        const int button_x = getButton(msg, x_button_index_);
+        const int button_ps = getButton(msg, ps_button_index_);
 
         if (button_x == 1 && x_btn_once_)
         {
@@ -337,7 +438,7 @@ private:
 
         std::cout << "\rMode: " << controlModeToString(control_mode_)
                   << "  JoyInput: " << (joy_mode_active_ ? "JOYSTICK" : "NAVIGATION")
-                  << "  Docked: " << (isDockedMode() ? "true" : "false")
+                  << "  SystemDockingState: " << (docking_state_ ? "true" : "false")
                   << "  Linear: " << cmd.linear.x
                   << "  Angular: " << cmd.angular.z
                   << "   " << std::flush;

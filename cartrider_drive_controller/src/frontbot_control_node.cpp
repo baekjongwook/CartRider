@@ -26,11 +26,12 @@ public:
         ACKERMANN
     };
 
-    enum class DockingCommandMode
+    enum class MightyZapActionMode
     {
         IDLE,
-        DOCKING,
-        UNDOCKING
+        HOME,
+        CART_DOCKING,
+        ROBOT_DOCKING
     };
 
     FrontbotControlNode()
@@ -47,21 +48,25 @@ public:
         front_vesc_motor_ids_ =
             this->declare_parameter<std::vector<int64_t>>("front_vesc_motor_ids", std::vector<int64_t>{});
 
-        mightyzap_docking_speed_ =
-            this->declare_parameter<int>("mightyzap_docking_speed", 500);
-        mightyzap_docking_position_ =
-            this->declare_parameter<int>("mightyzap_docking_position", 3000);
-        mightyzap_release_position_ =
-            this->declare_parameter<int>("mightyzap_release_position", 0);
+        mightyzap_action_speed_ =
+            this->declare_parameter<int>("mightyzap_action_speed", 600);
+        mightyzap_home_position_ =
+            this->declare_parameter<int>("mightyzap_home_position", 2700);
+        mightyzap_cart_docking_position_ =
+            this->declare_parameter<int>("mightyzap_cart_docking_position", 0);
+        mightyzap_robot_docking_position_ =
+            this->declare_parameter<int>("mightyzap_robot_docking_position", 1400);
         mightyzap_position_tolerance_ =
             this->declare_parameter<int>("mightyzap_position_tolerance", 20);
 
-        mightyzap_docking_speed_ =
-            std::clamp(mightyzap_docking_speed_, 0, 1023);
-        mightyzap_docking_position_ =
-            std::clamp(mightyzap_docking_position_, 0, 4095);
-        mightyzap_release_position_ =
-            std::clamp(mightyzap_release_position_, 0, 4095);
+        mightyzap_action_speed_ =
+            std::clamp(mightyzap_action_speed_, 0, 1023);
+        mightyzap_home_position_ =
+            std::clamp(mightyzap_home_position_, 0, 4095);
+        mightyzap_cart_docking_position_ =
+            std::clamp(mightyzap_cart_docking_position_, 0, 4095);
+        mightyzap_robot_docking_position_ =
+            std::clamp(mightyzap_robot_docking_position_, 0, 4095);
         mightyzap_position_tolerance_ =
             std::clamp(mightyzap_position_tolerance_, 0, 4095);
 
@@ -84,7 +89,7 @@ public:
         front_right_vesc_id_ = static_cast<int>(front_vesc_motor_ids_[1]);
 
         drive_mode_ = DriveMode::DIFFERENTIAL;
-        docking_command_mode_ = DockingCommandMode::IDLE;
+        mightyzap_action_mode_ = MightyZapActionMode::IDLE;
 
         diff_ = std::make_unique<vehicle_kinematics::DifferentialDrive>(
             front_wheel_radius_,
@@ -127,10 +132,20 @@ public:
             10,
             std::bind(&FrontbotControlNode::dockingStateCallback, this, std::placeholders::_1));
 
-        do_docking_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "do_docking",
+        home_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "home",
             10,
-            std::bind(&FrontbotControlNode::doDockingCallback, this, std::placeholders::_1));
+            std::bind(&FrontbotControlNode::homeCallback, this, std::placeholders::_1));
+
+        cart_docking_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "cart_docking",
+            10,
+            std::bind(&FrontbotControlNode::cartDockingCallback, this, std::placeholders::_1));
+
+        robot_docking_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "robot_docking",
+            10,
+            std::bind(&FrontbotControlNode::robotDockingCallback, this, std::placeholders::_1));
 
         mightyzap_position_sub_ = this->create_subscription<std_msgs::msg::UInt16>(
             "present_position",
@@ -176,10 +191,11 @@ public:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "mightyZAP Params: docking_speed=%d docking_position=%d release_position=%d tolerance=%d",
-            mightyzap_docking_speed_,
-            mightyzap_docking_position_,
-            mightyzap_release_position_,
+            "mightyZAP Params: speed=%d home=%d cart_docking=%d robot_docking=%d tolerance=%d",
+            mightyzap_action_speed_,
+            mightyzap_home_position_,
+            mightyzap_cart_docking_position_,
+            mightyzap_robot_docking_position_,
             mightyzap_position_tolerance_);
     }
 
@@ -189,7 +205,7 @@ private:
     bool mightyzap_position_valid_{false};
 
     DriveMode drive_mode_{DriveMode::DIFFERENTIAL};
-    DockingCommandMode docking_command_mode_{DockingCommandMode::IDLE};
+    MightyZapActionMode mightyzap_action_mode_{MightyZapActionMode::IDLE};
 
     std::unique_ptr<vehicle_kinematics::DifferentialDrive> diff_;
     std::unique_ptr<vehicle_kinematics::TwoWSFourWDDrive> two_ws_four_wd_;
@@ -208,11 +224,12 @@ private:
     int front_left_vesc_id_{0};
     int front_right_vesc_id_{0};
 
-    int mightyzap_docking_speed_{500};
-    int mightyzap_docking_position_{3000};
-    int mightyzap_release_position_{0};
+    int mightyzap_action_speed_{600};
+    int mightyzap_home_position_{2700};
+    int mightyzap_cart_docking_position_{0};
+    int mightyzap_robot_docking_position_{1400};
     int mightyzap_position_tolerance_{20};
-    int mightyzap_active_target_position_{0};
+    int mightyzap_active_target_position_{2700};
 
     uint16_t mightyzap_present_position_{0};
 
@@ -224,7 +241,11 @@ private:
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr do_docking_sub_;
+
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr home_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cart_docking_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr robot_docking_sub_;
+
     rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr mightyzap_position_sub_;
 
     rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr front_rmd_command_pub_;
@@ -249,16 +270,18 @@ private:
         }
     }
 
-    std::string dockingCommandModeToString(DockingCommandMode mode) const
+    std::string actionModeToString(MightyZapActionMode mode) const
     {
         switch (mode)
         {
-        case DockingCommandMode::IDLE:
+        case MightyZapActionMode::IDLE:
             return "IDLE";
-        case DockingCommandMode::DOCKING:
-            return "DOCKING";
-        case DockingCommandMode::UNDOCKING:
-            return "UNDOCKING";
+        case MightyZapActionMode::HOME:
+            return "HOME";
+        case MightyZapActionMode::CART_DOCKING:
+            return "CART_DOCKING";
+        case MightyZapActionMode::ROBOT_DOCKING:
+            return "ROBOT_DOCKING";
         default:
             return "UNKNOWN";
         }
@@ -299,59 +322,75 @@ private:
             driveModeToString(drive_mode_).c_str());
     }
 
-    void doDockingCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    void homeCallback(const std_msgs::msg::Bool::SharedPtr msg)
     {
-        if (msg->data)
+        if (!msg->data)
         {
-            if (docking_state_ && docking_command_mode_ == DockingCommandMode::IDLE)
-            {
-                RCLCPP_INFO(this->get_logger(), "[DOCKING] Already docked. Ignoring do_docking=true.");
-                return;
-            }
-
-            startDockingMotion(
-                DockingCommandMode::DOCKING,
-                mightyzap_docking_position_);
-
-            RCLCPP_INFO(
-                this->get_logger(),
-                "[DOCKING] Docking started. target=%d speed=%d tolerance=%d",
-                mightyzap_active_target_position_,
-                mightyzap_docking_speed_,
-                mightyzap_position_tolerance_);
+            return;
         }
-        else
-        {
-            if (!docking_state_ && docking_command_mode_ == DockingCommandMode::IDLE)
-            {
-                RCLCPP_INFO(this->get_logger(), "[DOCKING] Already released. Ignoring do_docking=false.");
-                return;
-            }
 
-            startDockingMotion(
-                DockingCommandMode::UNDOCKING,
-                mightyzap_release_position_);
+        startMightyZapAction(
+            MightyZapActionMode::HOME,
+            mightyzap_home_position_);
 
-            RCLCPP_INFO(
-                this->get_logger(),
-                "[DOCKING] Undocking started. target=%d speed=%d tolerance=%d",
-                mightyzap_active_target_position_,
-                mightyzap_docking_speed_,
-                mightyzap_position_tolerance_);
-        }
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[MIGHTYZAP] Home command received. target=%d speed=%d tolerance=%d",
+            mightyzap_active_target_position_,
+            mightyzap_action_speed_,
+            mightyzap_position_tolerance_);
     }
 
-    void startDockingMotion(
-        DockingCommandMode mode,
+    void cartDockingCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        if (!msg->data)
+        {
+            return;
+        }
+
+        startMightyZapAction(
+            MightyZapActionMode::CART_DOCKING,
+            mightyzap_cart_docking_position_);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[MIGHTYZAP] Cart docking command received. target=%d speed=%d tolerance=%d",
+            mightyzap_active_target_position_,
+            mightyzap_action_speed_,
+            mightyzap_position_tolerance_);
+    }
+
+    void robotDockingCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        if (!msg->data)
+        {
+            return;
+        }
+
+        startMightyZapAction(
+            MightyZapActionMode::ROBOT_DOCKING,
+            mightyzap_robot_docking_position_);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[MIGHTYZAP] Robot docking command received. target=%d speed=%d tolerance=%d",
+            mightyzap_active_target_position_,
+            mightyzap_action_speed_,
+            mightyzap_position_tolerance_);
+    }
+
+    void startMightyZapAction(
+        MightyZapActionMode mode,
         int target_position)
     {
-        docking_command_mode_ = mode;
+        mightyzap_action_mode_ = mode;
         mightyzap_active_target_position_ =
             std::clamp(target_position, 0, 4095);
 
         publishFrontCommand(0.0, 0.0, 0.0, 0.0);
+
         publishMightyZapCommand(
-            mightyzap_docking_speed_,
+            mightyzap_action_speed_,
             mightyzap_active_target_position_,
             true);
     }
@@ -361,7 +400,7 @@ private:
         mightyzap_present_position_ = msg->data;
         mightyzap_position_valid_ = true;
 
-        if (docking_command_mode_ == DockingCommandMode::IDLE)
+        if (mightyzap_action_mode_ == MightyZapActionMode::IDLE)
         {
             return;
         }
@@ -374,30 +413,43 @@ private:
             return;
         }
 
-        const DockingCommandMode completed_mode = docking_command_mode_;
-        docking_command_mode_ = DockingCommandMode::IDLE;
+        const MightyZapActionMode completed_mode = mightyzap_action_mode_;
+        mightyzap_action_mode_ = MightyZapActionMode::IDLE;
 
-        if (completed_mode == DockingCommandMode::DOCKING)
-        {
-            docking_state_ = true;
-            publishDockingState(true);
-
-            RCLCPP_INFO(
-                this->get_logger(),
-                "[DOCKING] Docking complete. present=%u target=%d error=%d tolerance=%d",
-                mightyzap_present_position_,
-                mightyzap_active_target_position_,
-                error,
-                mightyzap_position_tolerance_);
-        }
-        else if (completed_mode == DockingCommandMode::UNDOCKING)
+        if (completed_mode == MightyZapActionMode::HOME)
         {
             docking_state_ = false;
             publishDockingState(false);
 
             RCLCPP_INFO(
                 this->get_logger(),
-                "[DOCKING] Undocking complete. present=%u target=%d error=%d tolerance=%d",
+                "[MIGHTYZAP] Home complete. present=%u target=%d error=%d tolerance=%d -> docking_state=false",
+                mightyzap_present_position_,
+                mightyzap_active_target_position_,
+                error,
+                mightyzap_position_tolerance_);
+        }
+        else if (completed_mode == MightyZapActionMode::CART_DOCKING)
+        {
+            docking_state_ = true;
+            publishDockingState(true);
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[MIGHTYZAP] Cart docking complete. present=%u target=%d error=%d tolerance=%d -> docking_state=true",
+                mightyzap_present_position_,
+                mightyzap_active_target_position_,
+                error,
+                mightyzap_position_tolerance_);
+        }
+        else if (completed_mode == MightyZapActionMode::ROBOT_DOCKING)
+        {
+            docking_state_ = true;
+            publishDockingState(true);
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[MIGHTYZAP] Robot docking complete. present=%u target=%d error=%d tolerance=%d -> docking_state=true",
                 mightyzap_present_position_,
                 mightyzap_active_target_position_,
                 error,
@@ -432,14 +484,14 @@ private:
         docking_state_pub_->publish(msg);
     }
 
-    bool isDockingMotionActive() const
+    bool isMightyZapActionActive() const
     {
-        return docking_command_mode_ != DockingCommandMode::IDLE;
+        return mightyzap_action_mode_ != MightyZapActionMode::IDLE;
     }
 
-    bool blockDriveCommandDuringDocking(const std::string &source)
+    bool blockDriveCommandDuringMightyZapAction(const std::string &source)
     {
-        if (!isDockingMotionActive())
+        if (!isMightyZapActionActive())
         {
             return false;
         }
@@ -450,16 +502,16 @@ private:
             this->get_logger(),
             *this->get_clock(),
             1000,
-            "[%s] Drive command blocked while docking command is active. mode=%s",
+            "[%s] Drive command blocked while mightyZAP action is active. action=%s",
             source.c_str(),
-            dockingCommandModeToString(docking_command_mode_).c_str());
+            actionModeToString(mightyzap_action_mode_).c_str());
 
         return true;
     }
 
     void frontCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (blockDriveCommandDuringDocking("NAV_FRONT"))
+        if (blockDriveCommandDuringMightyZapAction("NAV_FRONT"))
         {
             return;
         }
@@ -479,7 +531,7 @@ private:
 
     void multibotCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (blockDriveCommandDuringDocking("NAV_MULTIBOT"))
+        if (blockDriveCommandDuringMightyZapAction("NAV_MULTIBOT"))
         {
             return;
         }
@@ -499,7 +551,7 @@ private:
 
     void frontCmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (blockDriveCommandDuringDocking("JOY_FRONT"))
+        if (blockDriveCommandDuringMightyZapAction("JOY_FRONT"))
         {
             return;
         }
@@ -519,7 +571,7 @@ private:
 
     void multibotCmdJoyCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
-        if (blockDriveCommandDuringDocking("JOY_MULTIBOT"))
+        if (blockDriveCommandDuringMightyZapAction("JOY_MULTIBOT"))
         {
             return;
         }
