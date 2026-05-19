@@ -4,6 +4,9 @@
 // button 1: home
 // button 2: cart_docking
 // button 3: robot_docking
+//
+// PS button cycles joystick drive mode only:
+// REARBOT_INDEPENDENT -> FRONTBOT_INDEPENDENT -> MULTIBOT_ACKERMANN
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -53,11 +56,6 @@ public:
         robot_docking_pub_ = this->create_publisher<std_msgs::msg::Bool>(
             "/front/robot_docking",
             10);
-
-        docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "/docking_state",
-            10,
-            std::bind(&Teleop::dockingStateCallback, this, std::placeholders::_1));
 
         sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
             "/joy",
@@ -123,12 +121,10 @@ private:
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr cart_docking_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr robot_docking_pub_;
 
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
 
     bool cmd_vel_was_zero_{true};
     bool joy_mode_active_{true};
-    bool docking_state_{false};
 
     bool x_btn_once_{true};
     bool ps_btn_once_{true};
@@ -172,11 +168,6 @@ private:
         default:
             return "UNKNOWN";
         }
-    }
-
-    bool isDockedMode() const
-    {
-        return control_mode_ == ControlMode::MULTIBOT_ACKERMANN;
     }
 
     bool isDifferentialMode() const
@@ -225,16 +216,6 @@ private:
             name.c_str());
     }
 
-    void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
-    {
-        docking_state_ = msg->data;
-
-        RCLCPP_INFO(
-            this->get_logger(),
-            "docking_state updated from system: %s",
-            docking_state_ ? "true" : "false");
-    }
-
     void nextControlMode()
     {
         switch (control_mode_)
@@ -260,9 +241,8 @@ private:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Joystick Control Mode Switched: [%s], system docking_state=%s",
-            controlModeToString(control_mode_).c_str(),
-            docking_state_ ? "true" : "false");
+            "Joystick Control Mode Switched: [%s]",
+            controlModeToString(control_mode_).c_str());
     }
 
     void getCurrentGains(double &max_lin, double &max_ang) const
@@ -438,7 +418,6 @@ private:
 
         std::cout << "\rMode: " << controlModeToString(control_mode_)
                   << "  JoyInput: " << (joy_mode_active_ ? "JOYSTICK" : "NAVIGATION")
-                  << "  SystemDockingState: " << (docking_state_ ? "true" : "false")
                   << "  Linear: " << cmd.linear.x
                   << "  Angular: " << cmd.angular.z
                   << "   " << std::flush;
