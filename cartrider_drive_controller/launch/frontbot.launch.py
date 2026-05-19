@@ -19,7 +19,7 @@ def generate_launch_description():
 
     rmd_launch_file = os.path.join(rmd_pkg_share, "launch", "bringup.launch.py")
     vesc_launch_file = os.path.join(vesc_pkg_share, "launch", "bringup.launch.py")
-    mightyzap_launch_file = os.path.join(mightyzap_pkg_share, "launch", "bringup.py")
+    mightyzap_launch_file = os.path.join(mightyzap_pkg_share, "launch", "bringup.launch.py")
 
     frontbot_node = Node(
         package="cartrider_drive_controller",
