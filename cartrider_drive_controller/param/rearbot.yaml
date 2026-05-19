@@ -11,5 +11,5 @@
 
     rear_rmd_motor_ids: [1, 2]
     
-    rear_wheel_radius: 0.115 # m
+    rear_wheel_radius: 0.110 # m
     rear_track_width: 0.280 # m
