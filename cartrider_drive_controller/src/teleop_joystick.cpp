@@ -1,12 +1,18 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
 // Modified: mightyZAP action buttons added
-// button 1: home
-// button 2: cart_docking
-// button 3: robot_docking
+// Final policy:
+// - /docking_state is managed only by frontbot_control_node
+// - teleop_joystick only subscribes /docking_state
+// - docking_state=false: PS switches REARBOT_INDEPENDENT <-> FRONTBOT_INDEPENDENT
+// - docking_state=true : joystick mode is forced to MULTIBOT_ACKERMANN
+// - cmd_vel topics remain only two:
+//   /cmd_vel_joy
+//   /front/cmd_vel_joy
 //
-// PS button cycles joystick drive mode only:
-// REARBOT_INDEPENDENT -> FRONTBOT_INDEPENDENT -> MULTIBOT_ACKERMANN
+// button 1: /front/home true
+// button 2: /front/cart_docking true
+// button 3: /front/robot_docking true
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -56,6 +62,11 @@ public:
         robot_docking_pub_ = this->create_publisher<std_msgs::msg::Bool>(
             "/front/robot_docking",
             10);
+
+        docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/docking_state",
+            10,
+            std::bind(&Teleop::dockingStateCallback, this, std::placeholders::_1));
 
         sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
             "/joy",
@@ -121,10 +132,12 @@ private:
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr cart_docking_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr robot_docking_pub_;
 
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
 
     bool cmd_vel_was_zero_{true};
     bool joy_mode_active_{true};
+    bool docking_state_{false};
 
     bool x_btn_once_{true};
     bool ps_btn_once_{true};
@@ -216,8 +229,49 @@ private:
             name.c_str());
     }
 
+    void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        const bool prev = docking_state_;
+        docking_state_ = msg->data;
+
+        if (docking_state_)
+        {
+            control_mode_ = ControlMode::MULTIBOT_ACKERMANN;
+        }
+        else
+        {
+            if (control_mode_ == ControlMode::MULTIBOT_ACKERMANN)
+            {
+                control_mode_ = ControlMode::REARBOT_INDEPENDENT;
+            }
+        }
+
+        cmd_vel_was_zero_ = true;
+
+        if (prev != docking_state_)
+        {
+            RCLCPP_INFO(
+                this->get_logger(),
+                "docking_state=%s -> joystick mode=%s",
+                docking_state_ ? "true" : "false",
+                controlModeToString(control_mode_).c_str());
+        }
+    }
+
     void nextControlMode()
     {
+        if (docking_state_)
+        {
+            control_mode_ = ControlMode::MULTIBOT_ACKERMANN;
+            cmd_vel_was_zero_ = true;
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Docked state. Joystick mode fixed to [%s].",
+                controlModeToString(control_mode_).c_str());
+            return;
+        }
+
         switch (control_mode_)
         {
         case ControlMode::REARBOT_INDEPENDENT:
@@ -225,13 +279,10 @@ private:
             break;
 
         case ControlMode::FRONTBOT_INDEPENDENT:
-            control_mode_ = ControlMode::MULTIBOT_ACKERMANN;
-            break;
-
-        case ControlMode::MULTIBOT_ACKERMANN:
             control_mode_ = ControlMode::REARBOT_INDEPENDENT;
             break;
 
+        case ControlMode::MULTIBOT_ACKERMANN:
         default:
             control_mode_ = ControlMode::REARBOT_INDEPENDENT;
             break;
@@ -241,7 +292,7 @@ private:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Joystick Control Mode Switched: [%s]",
+            "Joystick Control Mode Switched: [%s], docking_state=false",
             controlModeToString(control_mode_).c_str());
     }
 
@@ -418,6 +469,7 @@ private:
 
         std::cout << "\rMode: " << controlModeToString(control_mode_)
                   << "  JoyInput: " << (joy_mode_active_ ? "JOYSTICK" : "NAVIGATION")
+                  << "  DockingState: " << (docking_state_ ? "true" : "false")
                   << "  Linear: " << cmd.linear.x
                   << "  Angular: " << cmd.angular.z
                   << "   " << std::flush;
