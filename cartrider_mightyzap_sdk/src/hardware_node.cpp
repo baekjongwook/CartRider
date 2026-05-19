@@ -513,7 +513,10 @@ void HardwareNode::stateLoop()
                 msg.data = operating_rate;
                 present_operating_rate_pub_->publish(msg);
 
-                if (!actuator.safety_return_active &&
+                if (actuator.force_enabled &&
+                    actuator.motion_active &&
+                    !actuator.target_reached &&
+                    !actuator.safety_return_active &&
                     operating_rate > actuator.operating_rate_limit)
                 {
                     startSafetyReturn(actuator, operating_rate);

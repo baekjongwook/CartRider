@@ -25,11 +25,12 @@
 
     front_wheel_radius: 0.0635
     front_track_width: 0.250
-    wheel_base: 1.45
+    wheel_base: 0.48
+    # wheel_base: 1.45
 
     mightyzap_serial_port: "/dev/rs485_front_mightyzap"
     mightyzap_baudrate: 57600
-    mightyzap_command_timeout_ms: 0
+    mightyzap_command_timeout_ms: 1000
 
     mightyzap_actuator_id: 0
 
