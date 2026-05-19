@@ -620,8 +620,8 @@ private:
     {
         const auto output = two_ws_four_wd_->compute(msg->linear.x, msg->angular.z);
 
-        const double front_left_steer_rad = output.front_left_steer;
-        const double front_right_steer_rad = output.front_right_steer;
+        const double front_left_steer_rad = -output.front_left_steer;
+        const double front_right_steer_rad = -output.front_right_steer;
 
         const double front_left_wheel_radps = output.front_left_w;
         const double front_right_wheel_radps = -output.front_right_w;
