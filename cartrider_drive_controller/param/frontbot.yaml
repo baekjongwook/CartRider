@@ -25,8 +25,8 @@
 
     front_wheel_radius: 0.0635
     front_track_width: 0.250
-    # wheel_base: 0.48
-    wheel_base: 1.45
+    wheel_base: 0.48
+    # wheel_base: 1.45
 
     mightyzap_serial_port: "/dev/rs485_front_mightyzap"
     mightyzap_baudrate: 57600
@@ -38,18 +38,18 @@
     mightyzap_position_max: 4095
     mightyzap_position_tolerance: 20
 
-    mightyzap_initial_position: 2700
+    mightyzap_initial_position: 2850
 
     mightyzap_speed_min: 0
     mightyzap_speed_max: 1023
     mightyzap_initial_speed: 600
 
-    mightyzap_safe_position: 2700
+    mightyzap_safe_position: 2850
     mightyzap_operating_rate_limit: 600
 
     mightyzap_force_on_at_start: true
 
     mightyzap_action_speed: 600
-    mightyzap_home_position: 2700
+    mightyzap_home_position: 2850
     mightyzap_cart_docking_position: 0
-    mightyzap_robot_docking_position: 1400
+    mightyzap_robot_docking_position: 1550
