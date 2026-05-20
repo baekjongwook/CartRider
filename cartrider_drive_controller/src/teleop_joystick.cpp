@@ -1,6 +1,7 @@
 // Teleop_joystick
 // 2026.03.16 백종욱
 // Modified: mightyZAP action buttons added
+// Modified: Dynamixel gripper toggle button added
 // Final policy:
 // - /docking_state is managed only by frontbot_control_node
 // - teleop_joystick only subscribes /docking_state
@@ -13,6 +14,7 @@
 // button 1: /front/home true
 // button 2: /front/cart_docking true
 // button 3: /front/robot_docking true
+// button 9: /gripper_toggle toggle
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -63,6 +65,10 @@ public:
             "/front/robot_docking",
             10);
 
+        gripper_toggle_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/gripper_toggle",
+            10);
+
         docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/docking_state",
             10,
@@ -105,6 +111,9 @@ public:
         robot_docking_button_index_ =
             this->declare_parameter<int>("robot_docking_button_index", 3);
 
+        gripper_toggle_button_index_ =
+            this->declare_parameter<int>("gripper_toggle_button_index", 9);
+
         publishInitialStates();
 
         RCLCPP_INFO(
@@ -119,6 +128,11 @@ public:
             home_button_index_,
             cart_docking_button_index_,
             robot_docking_button_index_);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Dynamixel gripper toggle button: %d",
+            gripper_toggle_button_index_);
     }
 
 private:
@@ -131,6 +145,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr home_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr cart_docking_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr robot_docking_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr gripper_toggle_pub_;
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
@@ -145,6 +160,9 @@ private:
     bool home_btn_once_{true};
     bool cart_docking_btn_once_{true};
     bool robot_docking_btn_once_{true};
+
+    bool gripper_toggle_btn_once_{true};
+    bool gripper_toggle_state_{false};
 
     ControlMode control_mode_{ControlMode::REARBOT_INDEPENDENT};
 
@@ -166,6 +184,7 @@ private:
     int home_button_index_{1};
     int cart_docking_button_index_{2};
     int robot_docking_button_index_{3};
+    int gripper_toggle_button_index_{9};
 
 private:
     std::string controlModeToString(ControlMode mode) const
@@ -213,6 +232,7 @@ private:
     void publishInitialStates()
     {
         publishJoyMode();
+        publishGripperToggleState();
     }
 
     void publishBoolCommand(
@@ -227,6 +247,18 @@ private:
             this->get_logger(),
             "mightyZAP manual command published: %s",
             name.c_str());
+    }
+
+    void publishGripperToggleState()
+    {
+        std_msgs::msg::Bool msg;
+        msg.data = gripper_toggle_state_;
+        gripper_toggle_pub_->publish(msg);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Dynamixel gripper toggle published: %s",
+            gripper_toggle_state_ ? "true(GRIP)" : "false(RELEASE)");
     }
 
     void dockingStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -380,12 +412,30 @@ private:
         }
     }
 
+    void handleGripperToggleButton(const sensor_msgs::msg::Joy::SharedPtr msg)
+    {
+        const int button_gripper = getButton(msg, gripper_toggle_button_index_);
+
+        if (button_gripper == 1 && gripper_toggle_btn_once_)
+        {
+            gripper_toggle_state_ = !gripper_toggle_state_;
+            publishGripperToggleState();
+
+            gripper_toggle_btn_once_ = false;
+        }
+        else if (button_gripper == 0)
+        {
+            gripper_toggle_btn_once_ = true;
+        }
+    }
+
     void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
     {
         geometry_msgs::msg::Twist cmd;
         bool is_zero = false;
 
         handleMightyZapButtons(msg);
+        handleGripperToggleButton(msg);
 
         const int button_x = getButton(msg, x_button_index_);
         const int button_ps = getButton(msg, ps_button_index_);
@@ -470,6 +520,7 @@ private:
         std::cout << "\rMode: " << controlModeToString(control_mode_)
                   << "  JoyInput: " << (joy_mode_active_ ? "JOYSTICK" : "NAVIGATION")
                   << "  DockingState: " << (docking_state_ ? "true" : "false")
+                  << "  Gripper: " << (gripper_toggle_state_ ? "GRIP" : "RELEASE")
                   << "  Linear: " << cmd.linear.x
                   << "  Angular: " << cmd.angular.z
                   << "   " << std::flush;

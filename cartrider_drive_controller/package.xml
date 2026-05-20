@@ -23,6 +23,7 @@
 
   <depend>cartrider_rmd_sdk</depend>
   <depend>cartrider_vesc_sdk</depend>
+  <depend>cartrider_dynamixel_sdk</depend>
 
   <exec_depend>python3-matplotlib</exec_depend>
 

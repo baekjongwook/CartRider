@@ -1,4 +1,4 @@
-hardware_node:
+/**:
   ros__parameters:
     mightyzap_serial_port: "/dev/rs485_front_mightyzap"
     mightyzap_baudrate: 57600

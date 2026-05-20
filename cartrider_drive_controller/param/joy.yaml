@@ -23,3 +23,5 @@ teleop_joystick:
     home_button_index: 1
     cart_docking_button_index: 2
     robot_docking_button_index: 3
+
+    gripper_toggle_button_index: 9

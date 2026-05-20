@@ -16,6 +16,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(cartrider_rmd_sdk REQUIRED)
 find_package(cartrider_vesc_sdk REQUIRED)
+find_package(cartrider_dynamixel_sdk REQUIRED)
 
 add_executable(rearbot_control_node
   src/rearbot_control_node.cpp
@@ -30,7 +31,8 @@ ament_target_dependencies(rearbot_control_node
   std_msgs
   sensor_msgs
   geometry_msgs
-  cartrider_rmd_sdk 
+  cartrider_rmd_sdk
+  cartrider_dynamixel_sdk
 )
 
 add_executable(rearbot_odom_node
@@ -50,9 +52,8 @@ ament_target_dependencies(rearbot_odom_node
   tf2
   tf2_ros
   tf2_geometry_msgs
-  cartrider_rmd_sdk 
+  cartrider_rmd_sdk
 )
-
 
 add_executable(frontbot_control_node
   src/frontbot_control_node.cpp
@@ -67,7 +68,7 @@ ament_target_dependencies(frontbot_control_node
   std_msgs
   sensor_msgs
   geometry_msgs
-  cartrider_rmd_sdk 
+  cartrider_rmd_sdk
   cartrider_vesc_sdk
 )
 
@@ -88,9 +89,8 @@ ament_target_dependencies(frontbot_odom_node
   tf2
   tf2_ros
   tf2_geometry_msgs
-  cartrider_rmd_sdk 
+  cartrider_rmd_sdk
 )
-
 
 add_executable(teleop_keyboard
   src/teleop_keyboard.cpp

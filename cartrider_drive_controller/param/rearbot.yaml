@@ -2,14 +2,31 @@
   ros__parameters:
     rmd_can_interface: "can_rear_rmd"
     rmd_motor_ids: [1, 2]
-    rmd_operate_modes: ["speed", "speed"]   # current, speed, position
+    rmd_operate_modes: ["speed", "speed"]
     rmd_gear_ratio: [1.0, 1.0]
 
-    rmd_speed_min: [-40.0, -40.0] # RPM
+    rmd_speed_min: [-40.0, -40.0]
     rmd_speed_max: [40.0, 40.0]
     rmd_speed_deadzone: [3.0, 3.0]
 
     rear_rmd_motor_ids: [1, 2]
-    
-    rear_wheel_radius: 0.110 # m
-    rear_track_width: 0.280 # m
+
+    rear_wheel_radius: 0.110
+    rear_track_width: 0.280
+
+    dynamixel_serial_port: "/dev/rs485_rear_dynamixel"
+    dynamixel_baudrate: 1000000
+
+    dynamixel_motor_ids: [1, 2]
+
+    dynamixel_position_min: [0.0, 0.0]
+    dynamixel_position_max: [1023.0, 1023.0]
+    dynamixel_position_omega_max: [1023.0, 1023.0]
+
+    dynamixel_initial_position: [204.0, 820.0]
+
+    dynamixel_torque_enable_at_start: true
+    dynamixel_state_publish_rate_hz: 20.0
+
+    dynamixel_release_position: [204.0, 820.0]
+    dynamixel_grip_position: [472.0, 552.0]

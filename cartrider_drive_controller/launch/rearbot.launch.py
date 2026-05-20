@@ -11,11 +11,15 @@ def generate_launch_description():
 
     controller_pkg_share = get_package_share_directory("cartrider_drive_controller")
     rmd_pkg_share = get_package_share_directory("cartrider_rmd_sdk")
+    dynamixel_pkg_share = get_package_share_directory("cartrider_dynamixel_sdk")
 
     rearbot_param_file = os.path.join(controller_pkg_share, "param", "rearbot.yaml")
     frontbot_param_file = os.path.join(controller_pkg_share, "param", "frontbot.yaml")
 
     rmd_launch_file = os.path.join(rmd_pkg_share, "launch", "bringup.launch.py")
+    dynamixel_launch_file = os.path.join(
+        dynamixel_pkg_share, "launch", "bringup.launch.py"
+    )
 
     rearbot_node = Node(
         package="cartrider_drive_controller",
@@ -44,10 +48,18 @@ def generate_launch_description():
         }.items(),
     )
 
+    dynamixel_bringup = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(dynamixel_launch_file),
+        launch_arguments={
+            "override_param_file": rearbot_param_file,
+        }.items(),
+    )
+
     return LaunchDescription(
         [
             rmd_bringup,
-            rearbot_node
+            dynamixel_bringup,
+            rearbot_node,
             # odom_node,
         ]
     )

@@ -4,6 +4,7 @@
 #include <std_msgs/msg/u_int16.hpp>
 
 #include "cartrider_rmd_sdk/msg/motor_command_array.hpp"
+#include "cartrider_dynamixel_sdk/msg/motor_command_array.hpp"
 
 #include "cartrider_drive_controller/differential_drive.hpp"
 #include "cartrider_drive_controller/ackermann_drive.hpp"
@@ -37,6 +38,15 @@ public:
     rear_rmd_motor_ids_ =
         this->declare_parameter<std::vector<int64_t>>("rear_rmd_motor_ids", std::vector<int64_t>{});
 
+    dynamixel_motor_ids_ =
+        this->declare_parameter<std::vector<int64_t>>("dynamixel_motor_ids", std::vector<int64_t>{});
+
+    dynamixel_release_position_ =
+        this->declare_parameter<std::vector<double>>("dynamixel_release_position", std::vector<double>{});
+
+    dynamixel_grip_position_ =
+        this->declare_parameter<std::vector<double>>("dynamixel_grip_position", std::vector<double>{});
+
     if (rear_rmd_motor_ids_.size() != 2)
     {
       RCLCPP_FATAL(
@@ -45,6 +55,8 @@ public:
           rear_rmd_motor_ids_.size());
       throw std::runtime_error("Invalid rear_rmd_motor_ids size");
     }
+
+    validateDynamixelParameters();
 
     rear_left_rmd_id_ = static_cast<int>(rear_rmd_motor_ids_[0]);
     rear_right_rmd_id_ = static_cast<int>(rear_rmd_motor_ids_[1]);
@@ -82,9 +94,19 @@ public:
         10,
         std::bind(&RearbotControlNode::cartCountCallback, this, std::placeholders::_1));
 
+    gripper_toggle_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "/gripper_toggle",
+        10,
+        std::bind(&RearbotControlNode::gripperToggleCallback, this, std::placeholders::_1));
+
     rear_rmd_command_pub_ =
         this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>(
             "rmd_command",
+            10);
+
+    dynamixel_command_pub_ =
+        this->create_publisher<cartrider_dynamixel_sdk::msg::MotorCommandArray>(
+            "/dynamixel_command",
             10);
 
     RCLCPP_INFO(
@@ -92,6 +114,11 @@ public:
         "Rearbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s, wheel_base=%.3f",
         driveModeToString(drive_mode_).c_str(),
         wheel_base_);
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Dynamixel Gripper Params Loaded. motors=%zu",
+        dynamixel_motor_ids_.size());
   }
 
 private:
@@ -109,6 +136,10 @@ private:
 
   std::vector<int64_t> rear_rmd_motor_ids_;
 
+  std::vector<int64_t> dynamixel_motor_ids_;
+  std::vector<double> dynamixel_release_position_;
+  std::vector<double> dynamixel_grip_position_;
+
   int rear_left_rmd_id_{0};
   int rear_right_rmd_id_{0};
 
@@ -117,8 +148,10 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
   rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr cart_count_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr gripper_toggle_sub_;
 
   rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr rear_rmd_command_pub_;
+  rclcpp::Publisher<cartrider_dynamixel_sdk::msg::MotorCommandArray>::SharedPtr dynamixel_command_pub_;
 
 private:
   std::string driveModeToString(DriveMode mode) const
@@ -131,6 +164,49 @@ private:
       return "ACKERMANN";
     default:
       return "UNKNOWN";
+    }
+  }
+
+  void validateDynamixelParameters()
+  {
+    const std::size_t n = dynamixel_motor_ids_.size();
+
+    if (n == 0)
+    {
+      RCLCPP_FATAL(
+          this->get_logger(),
+          "Parameter 'dynamixel_motor_ids' is empty.");
+      throw std::runtime_error("Invalid dynamixel_motor_ids size");
+    }
+
+    if (dynamixel_release_position_.size() != n ||
+        dynamixel_grip_position_.size() != n)
+    {
+      RCLCPP_FATAL(
+          this->get_logger(),
+          "Dynamixel parameter size mismatch. ids=%zu release=%zu grip=%zu",
+          dynamixel_motor_ids_.size(),
+          dynamixel_release_position_.size(),
+          dynamixel_grip_position_.size());
+      throw std::runtime_error("Dynamixel parameter size mismatch");
+    }
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+      if (dynamixel_motor_ids_[i] < 0 || dynamixel_motor_ids_[i] > 253)
+      {
+        RCLCPP_FATAL(
+            this->get_logger(),
+            "Invalid Dynamixel ID: %ld",
+            dynamixel_motor_ids_[i]);
+        throw std::runtime_error("Invalid Dynamixel ID");
+      }
+
+      dynamixel_release_position_[i] =
+          std::clamp(dynamixel_release_position_[i], 0.0, 1023.0);
+
+      dynamixel_grip_position_[i] =
+          std::clamp(dynamixel_grip_position_[i], 0.0, 1023.0);
     }
   }
 
@@ -205,6 +281,48 @@ private:
         this->get_logger(),
         "Drive Mode Switched by docking_state: %s",
         driveModeToString(drive_mode_).c_str());
+  }
+
+  void gripperToggleCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (msg->data)
+    {
+      publishDynamixelCommand(dynamixel_grip_position_, "GRIP");
+    }
+    else
+    {
+      publishDynamixelCommand(dynamixel_release_position_, "RELEASE");
+    }
+  }
+
+  void publishDynamixelCommand(
+      const std::vector<double> &target_positions,
+      const std::string &label)
+  {
+    cartrider_dynamixel_sdk::msg::MotorCommandArray dynamixel_cmd;
+
+    for (std::size_t i = 0; i < dynamixel_motor_ids_.size(); ++i)
+    {
+      cartrider_dynamixel_sdk::msg::MotorCommand cmd;
+
+      cmd.id = static_cast<int32_t>(dynamixel_motor_ids_[i]);
+      cmd.target = target_positions[i];
+
+      dynamixel_cmd.commands.push_back(cmd);
+    }
+
+    dynamixel_command_pub_->publish(dynamixel_cmd);
+
+    std::string log = "[GRIPPER][" + label + "]";
+    for (const auto &cmd : dynamixel_cmd.commands)
+    {
+      log += " ID" + std::to_string(cmd.id) + "=" + std::to_string(cmd.target);
+    }
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "%s",
+        log.c_str());
   }
 
   void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
