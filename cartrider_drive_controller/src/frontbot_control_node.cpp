@@ -95,12 +95,7 @@ public:
             front_wheel_radius_,
             front_track_width_);
 
-        two_ws_four_wd_ = std::make_unique<vehicle_kinematics::TwoWSFourWDDrive>(
-            wheel_base_,
-            front_track_width_,
-            rear_track_width_,
-            front_wheel_radius_,
-            rear_wheel_radius_);
+        updateTwoWsFourWdModel();
 
         front_cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "cmd_vel",
@@ -131,6 +126,11 @@ public:
             "/docking_state",
             10,
             std::bind(&FrontbotControlNode::dockingStateCallback, this, std::placeholders::_1));
+
+        cart_count_sub_ = this->create_subscription<std_msgs::msg::UInt16>(
+            "/cart_count",
+            10,
+            std::bind(&FrontbotControlNode::cartCountCallback, this, std::placeholders::_1));
 
         home_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "home",
@@ -186,8 +186,9 @@ public:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "Frontbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s",
-            driveModeToString(drive_mode_).c_str());
+            "Frontbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s, wheel_base=%.3f",
+            driveModeToString(drive_mode_).c_str(),
+            wheel_base_);
 
         RCLCPP_INFO(
             this->get_logger(),
@@ -241,6 +242,7 @@ private:
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
+    rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr cart_count_sub_;
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr home_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cart_docking_sub_;
@@ -285,6 +287,46 @@ private:
         default:
             return "UNKNOWN";
         }
+    }
+
+    double wheelBaseFromCartCount(uint16_t cart_count) const
+    {
+        if (cart_count == 0)
+        {
+            return 0.48;
+        }
+
+        return 1.30 + 0.15 * static_cast<double>(cart_count - 1);
+    }
+
+    void updateTwoWsFourWdModel()
+    {
+        two_ws_four_wd_ = std::make_unique<vehicle_kinematics::TwoWSFourWDDrive>(
+            wheel_base_,
+            front_track_width_,
+            rear_track_width_,
+            front_wheel_radius_,
+            rear_wheel_radius_);
+    }
+
+    void cartCountCallback(const std_msgs::msg::UInt16::SharedPtr msg)
+    {
+        const uint16_t cart_count = msg->data;
+        const double new_wheel_base = wheelBaseFromCartCount(cart_count);
+
+        if (std::abs(new_wheel_base - wheel_base_) < 1e-6)
+        {
+            return;
+        }
+
+        wheel_base_ = new_wheel_base;
+        updateTwoWsFourWdModel();
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[CART_COUNT] cart_count=%u -> wheel_base=%.3f m",
+            cart_count,
+            wheel_base_);
     }
 
     void joySigCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -634,8 +676,9 @@ private:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "[%s][2WS4WD-FRONT] v=%.3f w=%.3f -> FL_steer=%.3f FR_steer=%.3f FL_w=%.3f FR_w=%.3f",
+            "[%s][2WS4WD-FRONT] wb=%.3f v=%.3f w=%.3f -> FL_steer=%.3f FR_steer=%.3f FL_w=%.3f FR_w=%.3f",
             source.c_str(),
+            wheel_base_,
             msg->linear.x,
             msg->angular.z,
             front_left_steer_rad,

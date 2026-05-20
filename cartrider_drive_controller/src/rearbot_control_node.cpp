@@ -1,11 +1,20 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/u_int16.hpp>
 
 #include "cartrider_rmd_sdk/msg/motor_command_array.hpp"
 
 #include "cartrider_drive_controller/differential_drive.hpp"
 #include "cartrider_drive_controller/ackermann_drive.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 class RearbotControlNode : public rclcpp::Node
 {
@@ -46,12 +55,7 @@ public:
         rear_wheel_radius_,
         rear_track_width_);
 
-    two_ws_four_wd_ = std::make_unique<vehicle_kinematics::TwoWSFourWDDrive>(
-        wheel_base_,
-        front_track_width_,
-        rear_track_width_,
-        front_wheel_radius_,
-        rear_wheel_radius_);
+    updateTwoWsFourWdModel();
 
     cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "cmd_vel",
@@ -73,6 +77,11 @@ public:
         10,
         std::bind(&RearbotControlNode::dockingStateCallback, this, std::placeholders::_1));
 
+    cart_count_sub_ = this->create_subscription<std_msgs::msg::UInt16>(
+        "/cart_count",
+        10,
+        std::bind(&RearbotControlNode::cartCountCallback, this, std::placeholders::_1));
+
     rear_rmd_command_pub_ =
         this->create_publisher<cartrider_rmd_sdk::msg::MotorCommandArray>(
             "rmd_command",
@@ -80,8 +89,9 @@ public:
 
     RCLCPP_INFO(
         this->get_logger(),
-        "Rearbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s",
-        driveModeToString(drive_mode_).c_str());
+        "Rearbot Control Node Started. Input Mode: JOYSTICK, Drive Mode: %s, wheel_base=%.3f",
+        driveModeToString(drive_mode_).c_str(),
+        wheel_base_);
   }
 
 private:
@@ -106,6 +116,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_joy_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr cart_count_sub_;
 
   rclcpp::Publisher<cartrider_rmd_sdk::msg::MotorCommandArray>::SharedPtr rear_rmd_command_pub_;
 
@@ -121,6 +132,46 @@ private:
     default:
       return "UNKNOWN";
     }
+  }
+
+  double wheelBaseFromCartCount(uint16_t cart_count) const
+  {
+    if (cart_count == 0)
+    {
+      return 0.48;
+    }
+
+    return 1.30 + 0.15 * static_cast<double>(cart_count - 1);
+  }
+
+  void updateTwoWsFourWdModel()
+  {
+    two_ws_four_wd_ = std::make_unique<vehicle_kinematics::TwoWSFourWDDrive>(
+        wheel_base_,
+        front_track_width_,
+        rear_track_width_,
+        front_wheel_radius_,
+        rear_wheel_radius_);
+  }
+
+  void cartCountCallback(const std_msgs::msg::UInt16::SharedPtr msg)
+  {
+    const uint16_t cart_count = msg->data;
+    const double new_wheel_base = wheelBaseFromCartCount(cart_count);
+
+    if (std::abs(new_wheel_base - wheel_base_) < 1e-6)
+    {
+      return;
+    }
+
+    wheel_base_ = new_wheel_base;
+    updateTwoWsFourWdModel();
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "[CART_COUNT] cart_count=%u -> wheel_base=%.3f m",
+        cart_count,
+        wheel_base_);
   }
 
   void joySigCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -252,8 +303,9 @@ private:
 
     RCLCPP_INFO(
         this->get_logger(),
-        "[%s][2WS4WD] v=%.3f w=%.3f -> RL_w=%.3f RR_w=%.3f",
+        "[%s][2WS4WD] wb=%.3f v=%.3f w=%.3f -> RL_w=%.3f RR_w=%.3f",
         source.c_str(),
+        wheel_base_,
         msg->linear.x,
         msg->angular.z,
         rear_left_wheel_radps,
