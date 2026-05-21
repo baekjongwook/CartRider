@@ -1,0 +1,54 @@
+/**:
+  ros__parameters:
+    rmd_can_interface: "can_front_rmd"
+    rmd_motor_ids: [1, 2]
+    rmd_operate_modes: ["speed", "speed"]
+    rmd_gear_ratio: [3.0, 3.0]
+
+    rmd_speed_min: [-90.0, -90.0]
+    rmd_speed_max: [90.0, 90.0]
+    rmd_speed_deadzone: [3.0, 3.0]
+
+    vesc_can_interface: "can_front_vesc"
+    vesc_motor_ids: [3, 4]
+    vesc_operate_modes: ["position", "position"]
+    vesc_gear_ratio: [1.0, 1.0]
+    vesc_motor_gear_ratio: [35.0, 35.0]
+    vesc_pole_pairs: [4, 4]
+
+    vesc_position_min: [-60.0, -60.0]
+    vesc_position_max: [60.0, 60.0]
+    vesc_position_zero_offset: [115.0, 287.0]
+
+    front_rmd_motor_ids: [1, 2]
+    front_vesc_motor_ids: [3, 4]
+
+    front_wheel_radius: 0.0635
+    front_track_width: 0.250
+    wheel_base: 0.48
+
+    mightyzap_serial_port: "/dev/rs485_front_mightyzap"
+    mightyzap_baudrate: 57600
+    mightyzap_command_timeout_ms: 1000
+
+    mightyzap_actuator_id: 0
+
+    mightyzap_position_min: 0
+    mightyzap_position_max: 4095
+    mightyzap_position_tolerance: 20
+
+    mightyzap_initial_position: 2850
+
+    mightyzap_speed_min: 0
+    mightyzap_speed_max: 1023
+    mightyzap_initial_speed: 600
+
+    mightyzap_safe_position: 2850
+    mightyzap_operating_rate_limit: 600
+
+    mightyzap_force_on_at_start: true
+
+    mightyzap_action_speed: 600
+    mightyzap_home_position: 2850
+    mightyzap_cart_docking_position: 0
+    mightyzap_robot_docking_position: 1550

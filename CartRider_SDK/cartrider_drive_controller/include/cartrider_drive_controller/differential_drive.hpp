@@ -1,0 +1,49 @@
+#pragma once
+
+#include <algorithm>
+
+// linear_vel  : m/s
+// angular_vel : rad/s
+// wheel_radius: m
+// wheel_separation: m
+// output wheel angular velocity: rad/s
+
+namespace vehicle_kinematics
+{
+
+struct DifferentialOutput
+{
+    double left_w;  
+    double right_w; 
+};
+
+struct ForwardOutput
+{
+    double linear_vel; 
+    double angular_vel; 
+};
+
+class DifferentialDrive
+{
+public:
+    DifferentialDrive(double wheel_radius, double wheel_separation)
+    : wheel_radius_(wheel_radius), wheel_separation_(wheel_separation)
+    {}
+
+    DifferentialOutput compute(double linear_vel, double angular_vel) const
+    {
+        double v_left  = linear_vel - (angular_vel * wheel_separation_ / 2.0);
+        double v_right = linear_vel + (angular_vel * wheel_separation_ / 2.0);
+
+        double w_left  = v_left  / wheel_radius_;
+        double w_right = v_right / wheel_radius_;
+
+        return {w_left, w_right};
+    }
+
+private:
+    double wheel_radius_;
+    double wheel_separation_;
+};
+
+}

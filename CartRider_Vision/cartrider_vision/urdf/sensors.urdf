@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<robot name="sensor_setup">
+
+  <!-- Velodyne -->
+  <link name="velodyne"/>
+
+  <!-- Camera -->
+  <link name="camera_color_optical_frame"/>
+
+  <!-- Extrinsic -->
+  <joint name="velodyne_to_camera" type="fixed">
+    <parent link="velodyne"/>
+    <child link="camera_color_optical_frame"/>
+    <origin xyz="0.1417 0.0508 -0.0942"
+            rpy="1.5453 0.0254 1.4760"/>
+  </joint>
+
+</robot>
