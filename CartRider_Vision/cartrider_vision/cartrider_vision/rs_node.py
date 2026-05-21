@@ -13,7 +13,8 @@ from rclpy.time import Time
 from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PointStamped, Pose2D
+from geometry_msgs.msg import Point, PointStamped, Pose2D
+from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from tf2_ros import Buffer, TransformListener, TransformException
@@ -32,6 +33,7 @@ class RSNode(Node):
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("cart_pose_topic", "/rs/cart_pose")
+        self.declare_parameter("marker_topic", "/rs/cart_marker")
 
         self.declare_parameter("show_window", True)
         self.declare_parameter("window_name", "RS ArUco Cart Pose")
@@ -60,6 +62,7 @@ class RSNode(Node):
         self.camera_info_topic = self.get_parameter("camera_info_topic").value
         self.base_frame = self.get_parameter("base_frame").value
         self.cart_pose_topic = self.get_parameter("cart_pose_topic").value
+        self.marker_topic = self.get_parameter("marker_topic").value
 
         self.show_window = bool(self.get_parameter("show_window").value)
         self.window_name = self.get_parameter("window_name").value
@@ -152,6 +155,12 @@ class RSNode(Node):
             10,
         )
 
+        self.marker_pub = self.create_publisher(
+            Marker,
+            self.marker_topic,
+            10,
+        )
+
         if self.show_window:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
@@ -161,6 +170,7 @@ class RSNode(Node):
         self.get_logger().info(f"Camera info topic : {self.camera_info_topic}")
         self.get_logger().info(f"Base frame        : {self.base_frame}")
         self.get_logger().info(f"Output topic      : {self.cart_pose_topic}")
+        self.get_logger().info(f"Marker topic      : {self.marker_topic}")
         self.get_logger().info("Detection         : largest ArUco only, no YOLO")
         self.get_logger().info("Position          : depth first, PnP fallback")
         self.get_logger().info(
@@ -271,6 +281,7 @@ class RSNode(Node):
         cart_pose.theta = math.radians(float(cart_yaw_deg))
 
         self.cart_pose_pub.publish(cart_pose)
+        self.publish_cart_marker(cart_pose)
 
         self.draw_marker(annotated, corners, marker_id)
         self.draw_pose_text(
@@ -483,6 +494,118 @@ class RSNode(Node):
             return depth.astype(np.float32) / 1000.0
 
         return depth.astype(np.float32)
+
+    def publish_cart_marker(self, pose: Pose2D):
+        now_msg = self.get_clock().now().to_msg()
+
+        sphere = Marker()
+        sphere.header.stamp = now_msg
+        sphere.header.frame_id = self.base_frame
+        sphere.ns = "rs_cart"
+        sphere.id = 0
+        sphere.type = Marker.SPHERE
+        sphere.action = Marker.ADD
+        sphere.pose.position.x = float(pose.x)
+        sphere.pose.position.y = float(pose.y)
+        sphere.pose.position.z = 0.08
+        sphere.pose.orientation.w = 1.0
+        sphere.scale.x = 0.18
+        sphere.scale.y = 0.18
+        sphere.scale.z = 0.18
+        sphere.color.r = 0.0
+        sphere.color.g = 1.0
+        sphere.color.b = 0.0
+        sphere.color.a = 1.0
+        sphere.lifetime.sec = 0
+        sphere.lifetime.nanosec = 300000000
+
+        arrow = Marker()
+        arrow.header.stamp = now_msg
+        arrow.header.frame_id = self.base_frame
+        arrow.ns = "rs_cart"
+        arrow.id = 1
+        arrow.type = Marker.ARROW
+        arrow.action = Marker.ADD
+        arrow.scale.x = 0.05
+        arrow.scale.y = 0.10
+        arrow.scale.z = 0.10
+        arrow.color.r = 1.0
+        arrow.color.g = 0.5
+        arrow.color.b = 0.0
+        arrow.color.a = 1.0
+        arrow.lifetime.sec = 0
+        arrow.lifetime.nanosec = 300000000
+
+        arrow_len = 0.45
+
+        p0 = Point()
+        p0.x = float(pose.x)
+        p0.y = float(pose.y)
+        p0.z = 0.12
+
+        p1 = Point()
+        p1.x = float(pose.x) + arrow_len * math.cos(float(pose.theta))
+        p1.y = float(pose.y) + arrow_len * math.sin(float(pose.theta))
+        p1.z = 0.12
+
+        arrow.points.append(p0)
+        arrow.points.append(p1)
+
+        text = Marker()
+        text.header.stamp = now_msg
+        text.header.frame_id = self.base_frame
+        text.ns = "rs_cart"
+        text.id = 2
+        text.type = Marker.TEXT_VIEW_FACING
+        text.action = Marker.ADD
+        text.pose.position.x = float(pose.x)
+        text.pose.position.y = float(pose.y)
+        text.pose.position.z = 0.45
+        text.pose.orientation.w = 1.0
+        text.scale.z = 0.22
+        text.color.r = 1.0
+        text.color.g = 1.0
+        text.color.b = 1.0
+        text.color.a = 1.0
+        text.text = (
+            f"x={pose.x:.2f} m, y={pose.y:.2f} m, "
+            f"yaw={math.degrees(pose.theta):.1f} deg"
+        )
+        text.lifetime.sec = 0
+        text.lifetime.nanosec = 300000000
+
+        line = Marker()
+        line.header.stamp = now_msg
+        line.header.frame_id = self.base_frame
+        line.ns = "rs_cart"
+        line.id = 3
+        line.type = Marker.LINE_STRIP
+        line.action = Marker.ADD
+        line.scale.x = 0.025
+        line.color.r = 0.0
+        line.color.g = 0.7
+        line.color.b = 1.0
+        line.color.a = 1.0
+        line.lifetime.sec = 0
+        line.lifetime.nanosec = 300000000
+
+        origin = Point()
+        origin.x = 0.0
+        origin.y = 0.0
+        origin.z = 0.03
+
+        target = Point()
+        target.x = float(pose.x)
+        target.y = float(pose.y)
+        target.z = 0.03
+
+        line.points.append(origin)
+        line.points.append(target)
+
+        self.marker_pub.publish(sphere)
+        self.marker_pub.publish(arrow)
+        self.marker_pub.publish(text)
+        self.marker_pub.publish(line)
 
     def draw_marker(self, image, corners, marker_id):
         cv2.polylines(

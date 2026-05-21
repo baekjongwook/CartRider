@@ -132,6 +132,11 @@ public:
             10,
             std::bind(&FrontbotControlNode::cartCountCallback, this, std::placeholders::_1));
 
+        gripper_toggle_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/gripper_toggle",
+            10,
+            std::bind(&FrontbotControlNode::gripperToggleCallback, this, std::placeholders::_1));
+
         home_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "home",
             10,
@@ -204,6 +209,8 @@ private:
     bool joy_mode_active_{true};
     bool docking_state_{false};
     bool mightyzap_position_valid_{false};
+    bool gripper_toggle_state_{false};
+    bool docking_motion_complete_{false};
 
     DriveMode drive_mode_{DriveMode::DIFFERENTIAL};
     MightyZapActionMode mightyzap_action_mode_{MightyZapActionMode::IDLE};
@@ -243,6 +250,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr joy_sig_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
     rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr cart_count_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr gripper_toggle_sub_;
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr home_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cart_docking_sub_;
@@ -364,6 +372,39 @@ private:
             driveModeToString(drive_mode_).c_str());
     }
 
+    void gripperToggleCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        gripper_toggle_state_ = msg->data;
+
+        updateDockingStateByCondition();
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[GRIPPER] gripper_toggle=%s",
+            gripper_toggle_state_ ? "true" : "false");
+    }
+
+    void updateDockingStateByCondition()
+    {
+        const bool new_docking_state =
+            docking_motion_complete_ && gripper_toggle_state_;
+
+        if (new_docking_state == docking_state_)
+        {
+            return;
+        }
+
+        docking_state_ = new_docking_state;
+        publishDockingState(docking_state_);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[DOCKING_STATE] motion_complete=%s gripper_toggle=%s -> docking_state=%s",
+            docking_motion_complete_ ? "true" : "false",
+            gripper_toggle_state_ ? "true" : "false",
+            docking_state_ ? "true" : "false");
+    }
+
     void homeCallback(const std_msgs::msg::Bool::SharedPtr msg)
     {
         if (!msg->data)
@@ -396,10 +437,11 @@ private:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "[MIGHTYZAP] Cart docking command received. target=%d speed=%d tolerance=%d",
+            "[MIGHTYZAP] Cart docking command received. target=%d speed=%d tolerance=%d gripper_toggle=%s",
             mightyzap_active_target_position_,
             mightyzap_action_speed_,
-            mightyzap_position_tolerance_);
+            mightyzap_position_tolerance_,
+            gripper_toggle_state_ ? "true" : "false");
     }
 
     void robotDockingCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -415,10 +457,11 @@ private:
 
         RCLCPP_INFO(
             this->get_logger(),
-            "[MIGHTYZAP] Robot docking command received. target=%d speed=%d tolerance=%d",
+            "[MIGHTYZAP] Robot docking command received. target=%d speed=%d tolerance=%d gripper_toggle=%s",
             mightyzap_active_target_position_,
             mightyzap_action_speed_,
-            mightyzap_position_tolerance_);
+            mightyzap_position_tolerance_,
+            gripper_toggle_state_ ? "true" : "false");
     }
 
     void startMightyZapAction(
@@ -428,6 +471,13 @@ private:
         mightyzap_action_mode_ = mode;
         mightyzap_active_target_position_ =
             std::clamp(target_position, 0, 4095);
+
+        if (mode == MightyZapActionMode::CART_DOCKING ||
+            mode == MightyZapActionMode::ROBOT_DOCKING)
+        {
+            docking_motion_complete_ = false;
+            updateDockingStateByCondition();
+        }
 
         publishFrontCommand(0.0, 0.0, 0.0, 0.0);
 
@@ -460,6 +510,7 @@ private:
 
         if (completed_mode == MightyZapActionMode::HOME)
         {
+            docking_motion_complete_ = false;
             docking_state_ = false;
             publishDockingState(false);
 
@@ -473,29 +524,33 @@ private:
         }
         else if (completed_mode == MightyZapActionMode::CART_DOCKING)
         {
-            docking_state_ = true;
-            publishDockingState(true);
+            docking_motion_complete_ = true;
+            updateDockingStateByCondition();
 
             RCLCPP_INFO(
                 this->get_logger(),
-                "[MIGHTYZAP] Cart docking complete. present=%u target=%d error=%d tolerance=%d -> docking_state=true",
+                "[MIGHTYZAP] Cart docking complete. present=%u target=%d error=%d tolerance=%d motion_complete=true gripper_toggle=%s docking_state=%s",
                 mightyzap_present_position_,
                 mightyzap_active_target_position_,
                 error,
-                mightyzap_position_tolerance_);
+                mightyzap_position_tolerance_,
+                gripper_toggle_state_ ? "true" : "false",
+                docking_state_ ? "true" : "false");
         }
         else if (completed_mode == MightyZapActionMode::ROBOT_DOCKING)
         {
-            docking_state_ = true;
-            publishDockingState(true);
+            docking_motion_complete_ = true;
+            updateDockingStateByCondition();
 
             RCLCPP_INFO(
                 this->get_logger(),
-                "[MIGHTYZAP] Robot docking complete. present=%u target=%d error=%d tolerance=%d -> docking_state=true",
+                "[MIGHTYZAP] Robot docking complete. present=%u target=%d error=%d tolerance=%d motion_complete=true gripper_toggle=%s docking_state=%s",
                 mightyzap_present_position_,
                 mightyzap_active_target_position_,
                 error,
-                mightyzap_position_tolerance_);
+                mightyzap_position_tolerance_,
+                gripper_toggle_state_ ? "true" : "false",
+                docking_state_ ? "true" : "false");
         }
     }
 
