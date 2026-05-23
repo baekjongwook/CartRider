@@ -21,10 +21,9 @@ def generate_launch_description():
 
     base_frame = LaunchConfiguration("base_frame")
     rs_frame = LaunchConfiguration("rs_frame")
-
     rs_serial_no = LaunchConfiguration("rs_serial_no")
 
-    realsense_launch = IncludeLaunchDescription(
+    realsense = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory("realsense2_camera"),
@@ -36,31 +35,22 @@ def generate_launch_description():
             "camera_name": "rs",
             "camera_namespace": "rear",
             "serial_no": rs_serial_no,
-
             "enable_color": "true",
             "enable_depth": "true",
             "align_depth.enable": "true",
             "enable_sync": "true",
             "pointcloud.enable": "true",
-
             "depth_module.profile": "640x480x30",
             "rgb_camera.profile": "640x480x30",
-
             "publish_tf": "true",
-
-            "base_frame_id": "rear_rs_link",
-            "depth_frame_id": "rear_rs_depth_frame",
-            "color_frame_id": "rear_rs_color_frame",
-            "depth_optical_frame_id": "rear_rs_depth_optical_frame",
-            "color_optical_frame_id": "rear_rs_color_optical_frame",
-            "aligned_depth_to_color_frame_id": "rear_rs_aligned_depth_to_color_frame",
         }.items(),
     )
 
     base_to_rs_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        name="rear_base_to_rs_tf",
+        namespace="rear",
+        name="base_to_rs_tf",
         arguments=[
             rs_x,
             rs_y,
@@ -76,7 +66,8 @@ def generate_launch_description():
     rs_node = Node(
         package="cartrider_vision",
         executable="rs_node",
-        name="rear_rs_node",
+        namespace="rear",
+        name="rs_node",
         output="screen",
         parameters=[
             {
@@ -145,7 +136,7 @@ def generate_launch_description():
             DeclareLaunchArgument("rs_yaw", default_value="0.0"),
 
             DeclareLaunchArgument("base_frame", default_value="base_link"),
-            DeclareLaunchArgument("rs_frame", default_value="rear_rs_link"),
+            DeclareLaunchArgument("rs_frame", default_value="rs_link"),
 
             DeclareLaunchArgument("show_window", default_value="true"),
 
@@ -155,7 +146,7 @@ def generate_launch_description():
             DeclareLaunchArgument("yaw_snap_180_min_deg", default_value="175.0"),
             DeclareLaunchArgument("yaw_snap_180_max_deg", default_value="180.0"),
 
-            realsense_launch,
+            realsense,
             base_to_rs_tf,
             rs_node,
         ]
