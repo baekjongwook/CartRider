@@ -57,6 +57,12 @@ class RSNode(Node):
         self.declare_parameter("id2_offset_x", 0.0)
         self.declare_parameter("id2_offset_y", 0.0)
 
+        self.declare_parameter("yaw_snap_enable", True)
+        self.declare_parameter("yaw_snap_zero_min_deg", -10.0)
+        self.declare_parameter("yaw_snap_zero_max_deg", 10.0)
+        self.declare_parameter("yaw_snap_180_min_deg", 175.0)
+        self.declare_parameter("yaw_snap_180_max_deg", 180.0)
+
         self.rgb_topic = self.get_parameter("rgb_topic").value
         self.depth_topic = self.get_parameter("depth_topic").value
         self.camera_info_topic = self.get_parameter("camera_info_topic").value
@@ -71,6 +77,20 @@ class RSNode(Node):
         self.depth_min_m = float(self.get_parameter("depth_min_m").value)
         self.depth_max_m = float(self.get_parameter("depth_max_m").value)
         self.depth_margin_px = int(self.get_parameter("depth_margin_px").value)
+
+        self.yaw_snap_enable = bool(self.get_parameter("yaw_snap_enable").value)
+        self.yaw_snap_zero_min_deg = float(
+            self.get_parameter("yaw_snap_zero_min_deg").value
+        )
+        self.yaw_snap_zero_max_deg = float(
+            self.get_parameter("yaw_snap_zero_max_deg").value
+        )
+        self.yaw_snap_180_min_deg = float(
+            self.get_parameter("yaw_snap_180_min_deg").value
+        )
+        self.yaw_snap_180_max_deg = float(
+            self.get_parameter("yaw_snap_180_max_deg").value
+        )
 
         self.aruco_id_to_cart_yaw_base_deg = {
             1: float(self.get_parameter("id1_yaw_deg").value),
@@ -173,13 +193,18 @@ class RSNode(Node):
         self.get_logger().info(f"Marker topic      : {self.marker_topic}")
         self.get_logger().info("Detection         : largest ArUco only, no YOLO")
         self.get_logger().info("Position          : depth first, PnP fallback")
-        self.get_logger().info(
-            "Yaw output        : -180 deg ~ +180 deg with snap zones"
-        )
-        self.get_logger().info(
-            "Yaw snap          : -10~10 => 0 deg, |yaw|>=175 => 180 deg"
-        )
         self.get_logger().info("Output            : Pose2D x[m], y[m], theta[rad]")
+        self.get_logger().info(f"Yaw snap enable   : {self.yaw_snap_enable}")
+        self.get_logger().info(
+            f"Yaw snap 0 deg    : "
+            f"{self.yaw_snap_zero_min_deg:.1f} ~ "
+            f"{self.yaw_snap_zero_max_deg:.1f} deg"
+        )
+        self.get_logger().info(
+            f"Yaw snap 180 deg  : abs(yaw) "
+            f"{self.yaw_snap_180_min_deg:.1f} ~ "
+            f"{self.yaw_snap_180_max_deg:.1f} deg"
+        )
 
     def camera_info_callback(self, msg: CameraInfo):
         self.camera_matrix = np.array(msg.k, dtype=np.float64).reshape(3, 3)
@@ -440,10 +465,21 @@ class RSNode(Node):
     def apply_yaw_snap(self, yaw_deg):
         yaw = self.normalize_angle_180(yaw_deg)
 
-        if -10.0 <= yaw <= 10.0:
+        if not self.yaw_snap_enable:
+            return yaw
+
+        zero_min = min(self.yaw_snap_zero_min_deg, self.yaw_snap_zero_max_deg)
+        zero_max = max(self.yaw_snap_zero_min_deg, self.yaw_snap_zero_max_deg)
+
+        yaw_180_min = min(self.yaw_snap_180_min_deg, self.yaw_snap_180_max_deg)
+        yaw_180_max = max(self.yaw_snap_180_min_deg, self.yaw_snap_180_max_deg)
+
+        abs_yaw = abs(yaw)
+
+        if zero_min <= yaw <= zero_max:
             return 0.0
 
-        if yaw >= 175.0 or yaw <= -175.0:
+        if yaw_180_min <= abs_yaw <= yaw_180_max:
             return 180.0
 
         return yaw
