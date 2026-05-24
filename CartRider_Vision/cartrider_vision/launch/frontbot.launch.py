@@ -1,3 +1,4 @@
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.substitutions import LaunchConfiguration
@@ -5,7 +6,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-
 from ament_index_python.packages import get_package_share_directory
 
 import os
@@ -21,10 +21,6 @@ def generate_launch_description():
 
     base_frame = LaunchConfiguration("base_frame")
     rs_frame = LaunchConfiguration("rs_frame")
-    rs_serial_no = LaunchConfiguration("rs_serial_no")
-
-    depth_profile = LaunchConfiguration("depth_profile")
-    rgb_profile = LaunchConfiguration("rgb_profile")
 
     realsense = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -35,31 +31,23 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "camera_name": "rs",
+            "camera_name": "camera",
             "camera_namespace": "front",
-            "serial_no": rs_serial_no,
 
             "enable_color": "true",
             "enable_depth": "true",
             "align_depth.enable": "true",
-            "enable_sync": "true",
 
             "pointcloud.enable": "false",
-            "enable_infra1": "false",
-            "enable_infra2": "false",
             "enable_gyro": "false",
             "enable_accel": "false",
 
-            "depth_module.profile": depth_profile,
-            "rgb_camera.profile": rgb_profile,
-
-            "publish_tf": "true",
-            "base_frame_id": rs_frame,
-            "depth_frame_id": "front_rs_depth_frame",
-            "color_frame_id": "front_rs_color_frame",
-            "depth_optical_frame_id": "front_rs_depth_optical_frame",
-            "color_optical_frame_id": "front_rs_color_optical_frame",
-            "aligned_depth_to_color_frame_id": "front_rs_aligned_depth_to_color_frame",
+            "color_fps": "15",
+            "depth_fps": "15",
+            "color_width": "640",
+            "color_height": "480",
+            "depth_width": "640",
+            "depth_height": "480",
         }.items(),
     )
 
@@ -88,9 +76,9 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "rgb_topic": "/front/rs/color/image_raw",
-                "depth_topic": "/front/rs/aligned_depth_to_color/image_raw",
-                "camera_info_topic": "/front/rs/color/camera_info",
+                "rgb_topic": "/front/camera/color/image_raw",
+                "depth_topic": "/front/camera/aligned_depth_to_color/image_raw",
+                "camera_info_topic": "/front/camera/color/camera_info",
 
                 "base_frame": base_frame,
                 "cart_pose_topic": "/front/rs/cart_pose",
@@ -143,8 +131,6 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("rs_serial_no", default_value=""),
-
             DeclareLaunchArgument("rs_x", default_value="0.105628"),
             DeclareLaunchArgument("rs_y", default_value="0.000000"),
             DeclareLaunchArgument("rs_z", default_value="0.432740"),
@@ -153,10 +139,7 @@ def generate_launch_description():
             DeclareLaunchArgument("rs_yaw", default_value="0.0"),
 
             DeclareLaunchArgument("base_frame", default_value="base_link"),
-            DeclareLaunchArgument("rs_frame", default_value="front_rs_link"),
-
-            DeclareLaunchArgument("depth_profile", default_value="640x480x15"),
-            DeclareLaunchArgument("rgb_profile", default_value="640x480x15"),
+            DeclareLaunchArgument("rs_frame", default_value="camera_link"),
 
             DeclareLaunchArgument("show_window", default_value="true"),
 
