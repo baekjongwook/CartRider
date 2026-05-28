@@ -28,7 +28,8 @@ setup(
     entry_points={
         "console_scripts": [
             "vision = cartrider_vision.vision_node:main",
-            "rs_node = cartrider_vision.rs_node:main",
+            "rs_aruco_node = cartrider_vision.rs_aruco_node:main",
+            "rs_pcd_node = cartrider_vision.rs_pcd_node:main",
         ],
     },
 )

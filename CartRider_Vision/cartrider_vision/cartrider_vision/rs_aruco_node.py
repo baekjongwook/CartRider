@@ -20,9 +20,9 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 from tf2_ros import Buffer, TransformListener, TransformException
 
 
-class RSNode(Node):
+class RSArucoNode(Node):
     def __init__(self):
-        super().__init__("rs_node")
+        super().__init__("rs_aruco_node")
 
         self.bridge = CvBridge()
 
@@ -184,14 +184,14 @@ class RSNode(Node):
         if self.show_window:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
-        self.get_logger().info("rs_node started.")
+        self.get_logger().info("rs_aruco_node started.")
         self.get_logger().info(f"RGB topic         : {self.rgb_topic}")
         self.get_logger().info(f"Depth topic       : {self.depth_topic}")
         self.get_logger().info(f"Camera info topic : {self.camera_info_topic}")
         self.get_logger().info(f"Base frame        : {self.base_frame}")
         self.get_logger().info(f"Output topic      : {self.cart_pose_topic}")
         self.get_logger().info(f"Marker topic      : {self.marker_topic}")
-        self.get_logger().info("Detection         : largest ArUco only, no YOLO")
+        self.get_logger().info("Detection         : largest ArUco only")
         self.get_logger().info("Position          : depth first, PnP fallback")
         self.get_logger().info("Output            : Pose2D x[m], y[m], theta[rad]")
         self.get_logger().info(f"Yaw snap enable   : {self.yaw_snap_enable}")
@@ -712,6 +712,7 @@ class RSNode(Node):
         ]
 
         y = 30
+
         for line in lines:
             cv2.putText(
                 image,
@@ -759,7 +760,7 @@ def main(args=None):
     node = None
 
     try:
-        node = RSNode()
+        node = RSArucoNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
