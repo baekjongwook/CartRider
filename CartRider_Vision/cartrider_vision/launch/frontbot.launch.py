@@ -29,9 +29,6 @@ def generate_launch_description():
     front_rs_frame = LaunchConfiguration("front_rs_frame")
     rear_rs_frame = LaunchConfiguration("rear_rs_frame")
 
-    front_camera_serial_no = LaunchConfiguration("front_camera_serial_no")
-    rear_camera_serial_no = LaunchConfiguration("rear_camera_serial_no")
-
     front_realsense = GroupAction(
         [
             PushRosNamespace("front"),
@@ -46,10 +43,10 @@ def generate_launch_description():
                 launch_arguments={
                     "camera_name": "front_camera",
                     "camera_namespace": "",
-                    "serial_no": front_camera_serial_no,
-                    "enable_color": "true",
+                    "serial_no": "'247122073878'",
+                    "enable_color": "false",
                     "enable_depth": "true",
-                    "align_depth.enable": "true",
+                    "align_depth.enable": "false",
                     "pointcloud.enable": "true",
                     "enable_gyro": "false",
                     "enable_accel": "false",
@@ -78,7 +75,7 @@ def generate_launch_description():
                 launch_arguments={
                     "camera_name": "rear_camera",
                     "camera_namespace": "",
-                    "serial_no": rear_camera_serial_no,
+                    "serial_no": "'332322071504'",
                     "enable_color": "true",
                     "enable_depth": "true",
                     "align_depth.enable": "true",
@@ -140,7 +137,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "input_cloud_topic": "front_camera/depth/color/points",
+                "input_cloud_topic": "front_camera/depth/points",
                 "output_cloud_topic": "front_camera/depth/voxel_cloud",
                 "target_frame": base_frame,
                 "voxel_size": 0.05,
@@ -215,9 +212,9 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("front_rs_x", default_value="0.0"),
-            DeclareLaunchArgument("front_rs_y", default_value="0.0"),
-            DeclareLaunchArgument("front_rs_z", default_value="0.0"),
+            DeclareLaunchArgument("front_rs_x", default_value="0.197550"),
+            DeclareLaunchArgument("front_rs_y", default_value="0.000000"),
+            DeclareLaunchArgument("front_rs_z", default_value="0.367290"),
             DeclareLaunchArgument("front_rs_roll", default_value="0.0"),
             DeclareLaunchArgument("front_rs_pitch", default_value="0.0"),
             DeclareLaunchArgument("front_rs_yaw", default_value="0.0"),
@@ -230,8 +227,6 @@ def generate_launch_description():
             DeclareLaunchArgument("base_frame", default_value="base_link"),
             DeclareLaunchArgument("front_rs_frame", default_value="front_camera_link"),
             DeclareLaunchArgument("rear_rs_frame", default_value="rear_camera_link"),
-            DeclareLaunchArgument("front_camera_serial_no", default_value=""),
-            DeclareLaunchArgument("rear_camera_serial_no", default_value=""),
             DeclareLaunchArgument("show_window", default_value="true"),
             DeclareLaunchArgument("yaw_snap_enable", default_value="false"),
             DeclareLaunchArgument("yaw_snap_zero_min_deg", default_value="-5.0"),
