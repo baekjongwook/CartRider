@@ -3,7 +3,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, Grou
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
-from launch_ros.actions import Node, PushRosNamespace
+from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
@@ -23,7 +23,6 @@ def generate_launch_description():
 
     realsense = GroupAction(
         [
-            PushRosNamespace("rear"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(
@@ -34,22 +33,19 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     "camera_name": "camera",
-                    "camera_namespace": "",
+                    "camera_namespace": "rear",
                     "enable_color": "true",
                     "enable_depth": "true",
                     "align_depth.enable": "true",
                     "pointcloud.enable": "true",
                     "enable_gyro": "false",
                     "enable_accel": "false",
-                    "color_fps": "10",
-                    "depth_fps": "10",
-                    "color_width": "640",
-                    "color_height": "480",
-                    "depth_width": "640",
-                    "depth_height": "480",
+                    "rgb_camera.color_profile": "640x480x15",
+                    "depth_module.depth_profile": "640x480x15",
                 }.items(),
             ),
-        ]
+        ],
+        forwarding=False,
     )
 
     base_to_rs_tf = Node(
