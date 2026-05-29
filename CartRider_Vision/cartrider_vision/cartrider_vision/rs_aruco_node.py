@@ -27,21 +27,25 @@ class RSArucoNode(Node):
         self.bridge = CvBridge()
 
         self.declare_parameter("rgb_topic", "/camera/color/image_raw")
-        self.declare_parameter(
-            "depth_topic", "/camera/aligned_depth_to_color/image_raw"
-        )
+        self.declare_parameter("depth_topic", "/camera/aligned_depth_to_color/image_raw")
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("base_frame", "base_link")
+
         self.declare_parameter("cart_pose_topic", "/rs/cart_pose")
-        self.declare_parameter("marker_topic", "/rs/cart_marker")
+        self.declare_parameter("robot_pose_topic", "/rs/robot_pose")
+        self.declare_parameter("marker_topic", "/rs/marker")
 
         self.declare_parameter("show_window", True)
-        self.declare_parameter("window_name", "RS ArUco Cart Pose")
-        self.declare_parameter("marker_length_m", 0.20)
+        self.declare_parameter("window_name", "RS ArUco Docking Pose")
+
+        self.declare_parameter("cart_marker_length_m", 0.20)
+        self.declare_parameter("robot_marker_length_m", 0.12)
 
         self.declare_parameter("depth_min_m", 0.15)
         self.declare_parameter("depth_max_m", 5.0)
         self.declare_parameter("depth_margin_px", 4)
+
+        self.declare_parameter("robot_marker_id", 4)
 
         self.declare_parameter("id1_yaw_deg", 0.0)
         self.declare_parameter("id3_yaw_deg", 90.0)
@@ -67,16 +71,26 @@ class RSArucoNode(Node):
         self.depth_topic = self.get_parameter("depth_topic").value
         self.camera_info_topic = self.get_parameter("camera_info_topic").value
         self.base_frame = self.get_parameter("base_frame").value
+
         self.cart_pose_topic = self.get_parameter("cart_pose_topic").value
+        self.robot_pose_topic = self.get_parameter("robot_pose_topic").value
         self.marker_topic = self.get_parameter("marker_topic").value
 
         self.show_window = bool(self.get_parameter("show_window").value)
         self.window_name = self.get_parameter("window_name").value
-        self.marker_length_m = float(self.get_parameter("marker_length_m").value)
+
+        self.cart_marker_length_m = float(
+            self.get_parameter("cart_marker_length_m").value
+        )
+        self.robot_marker_length_m = float(
+            self.get_parameter("robot_marker_length_m").value
+        )
 
         self.depth_min_m = float(self.get_parameter("depth_min_m").value)
         self.depth_max_m = float(self.get_parameter("depth_max_m").value)
         self.depth_margin_px = int(self.get_parameter("depth_margin_px").value)
+
+        self.robot_marker_id = int(self.get_parameter("robot_marker_id").value)
 
         self.yaw_snap_enable = bool(self.get_parameter("yaw_snap_enable").value)
         self.yaw_snap_zero_min_deg = float(
@@ -175,6 +189,12 @@ class RSArucoNode(Node):
             10,
         )
 
+        self.robot_pose_pub = self.create_publisher(
+            Pose2D,
+            self.robot_pose_topic,
+            10,
+        )
+
         self.marker_pub = self.create_publisher(
             Marker,
             self.marker_topic,
@@ -185,23 +205,36 @@ class RSArucoNode(Node):
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
         self.get_logger().info("rs_aruco_node started.")
-        self.get_logger().info(f"RGB topic         : {self.rgb_topic}")
-        self.get_logger().info(f"Depth topic       : {self.depth_topic}")
-        self.get_logger().info(f"Camera info topic : {self.camera_info_topic}")
-        self.get_logger().info(f"Base frame        : {self.base_frame}")
-        self.get_logger().info(f"Output topic      : {self.cart_pose_topic}")
-        self.get_logger().info(f"Marker topic      : {self.marker_topic}")
-        self.get_logger().info("Detection         : largest ArUco only")
-        self.get_logger().info("Position          : depth first, PnP fallback")
-        self.get_logger().info("Output            : Pose2D x[m], y[m], theta[rad]")
-        self.get_logger().info(f"Yaw snap enable   : {self.yaw_snap_enable}")
+        self.get_logger().info(f"RGB topic             : {self.rgb_topic}")
+        self.get_logger().info(f"Depth topic           : {self.depth_topic}")
+        self.get_logger().info(f"Camera info topic     : {self.camera_info_topic}")
+        self.get_logger().info(f"Base frame            : {self.base_frame}")
+        self.get_logger().info(f"Cart pose topic       : {self.cart_pose_topic}")
+        self.get_logger().info(f"Robot pose topic      : {self.robot_pose_topic}")
+        self.get_logger().info(f"Marker topic          : {self.marker_topic}")
         self.get_logger().info(
-            f"Yaw snap 0 deg    : "
+            f"Cart marker length    : {self.cart_marker_length_m:.3f} m"
+        )
+        self.get_logger().info(
+            f"Robot marker length   : {self.robot_marker_length_m:.3f} m"
+        )
+        self.get_logger().info(f"Robot marker ID       : {self.robot_marker_id}")
+        self.get_logger().info("Detection             : largest ArUco only")
+        self.get_logger().info("Position              : depth first, PnP fallback")
+        self.get_logger().info(
+            "Cart output           : ID 0,1,2,3 -> Pose2D x[m], y[m], theta[rad]"
+        )
+        self.get_logger().info(
+            f"Robot output          : ID {self.robot_marker_id} -> Pose2D x[m], y[m], theta[rad]"
+        )
+        self.get_logger().info(f"Yaw snap enable       : {self.yaw_snap_enable}")
+        self.get_logger().info(
+            f"Yaw snap 0 deg        : "
             f"{self.yaw_snap_zero_min_deg:.1f} ~ "
             f"{self.yaw_snap_zero_max_deg:.1f} deg"
         )
         self.get_logger().info(
-            f"Yaw snap 180 deg  : abs(yaw) "
+            f"Yaw snap 180 deg      : abs(yaw) "
             f"{self.yaw_snap_180_min_deg:.1f} ~ "
             f"{self.yaw_snap_180_max_deg:.1f} deg"
         )
@@ -247,7 +280,18 @@ class RSArucoNode(Node):
 
         marker_id, corners = marker
 
-        marker_yaw_deg, pnp_xyz = self.estimate_marker_pose_pnp(corners)
+        marker_length_m = self.get_marker_length_m(marker_id)
+
+        if marker_length_m is None:
+            self.draw_marker(annotated, corners, marker_id)
+            self.draw_status(annotated, f"Unknown marker id: {marker_id}", bad=True)
+            self.show(annotated)
+            return
+
+        marker_yaw_deg, pnp_xyz = self.estimate_marker_pose_pnp(
+            corners,
+            marker_length_m,
+        )
 
         if marker_yaw_deg is None or pnp_xyz is None:
             self.draw_marker(annotated, corners, marker_id)
@@ -255,15 +299,16 @@ class RSArucoNode(Node):
             self.show(annotated)
             return
 
-        raw_cart_yaw_deg = self.compute_cart_yaw_180(marker_id, marker_yaw_deg)
+        mode, raw_yaw_deg, output_yaw_deg = self.compute_output_yaw(
+            marker_id,
+            marker_yaw_deg,
+        )
 
-        if raw_cart_yaw_deg is None:
+        if mode is None:
             self.draw_marker(annotated, corners, marker_id)
             self.draw_status(annotated, f"Unknown marker id: {marker_id}", bad=True)
             self.show(annotated)
             return
-
-        cart_yaw_deg = self.apply_yaw_snap(raw_cart_yaw_deg)
 
         depth_xyz = self.compute_depth_xyz(depth_m, corners)
         used_source = "PNP"
@@ -293,28 +338,39 @@ class RSArucoNode(Node):
         marker_x = float(marker_base.point.x)
         marker_y = float(marker_base.point.y)
 
-        cart_x, cart_y = self.marker_to_cart_center(
-            marker_id,
-            marker_x,
-            marker_y,
-            cart_yaw_deg,
-        )
+        if mode == "robot":
+            pose = Pose2D()
+            pose.x = float(marker_x)
+            pose.y = float(marker_y)
+            pose.theta = math.radians(float(output_yaw_deg))
 
-        cart_pose = Pose2D()
-        cart_pose.x = float(cart_x)
-        cart_pose.y = float(cart_y)
-        cart_pose.theta = math.radians(float(cart_yaw_deg))
+            self.robot_pose_pub.publish(pose)
+        else:
+            cart_x, cart_y = self.marker_to_cart_center(
+                marker_id,
+                marker_x,
+                marker_y,
+                output_yaw_deg,
+            )
 
-        self.cart_pose_pub.publish(cart_pose)
-        self.publish_cart_marker(cart_pose)
+            pose = Pose2D()
+            pose.x = float(cart_x)
+            pose.y = float(cart_y)
+            pose.theta = math.radians(float(output_yaw_deg))
+
+            self.cart_pose_pub.publish(pose)
+
+        self.publish_target_marker(pose, mode)
 
         self.draw_marker(annotated, corners, marker_id)
         self.draw_pose_text(
             annotated,
             marker_id,
-            cart_pose,
-            raw_cart_yaw_deg,
-            cart_yaw_deg,
+            mode,
+            pose,
+            raw_yaw_deg,
+            output_yaw_deg,
+            marker_length_m,
             pnp_xyz,
             depth_xyz,
             used_source,
@@ -355,8 +411,17 @@ class RSArucoNode(Node):
 
         return marker_id, corners_full
 
-    def estimate_marker_pose_pnp(self, corners):
-        half = self.marker_length_m / 2.0
+    def get_marker_length_m(self, marker_id):
+        if marker_id == self.robot_marker_id:
+            return self.robot_marker_length_m
+
+        if marker_id in self.aruco_id_to_cart_yaw_base_deg:
+            return self.cart_marker_length_m
+
+        return None
+
+    def estimate_marker_pose_pnp(self, corners, marker_length_m):
+        half = float(marker_length_m) / 2.0
 
         obj_points = np.array(
             [
@@ -452,12 +517,35 @@ class RSArucoNode(Node):
 
         return x, y, float(z)
 
+    def compute_output_yaw(self, marker_id, marker_yaw_deg):
+        if marker_id == self.robot_marker_id:
+            raw_yaw_deg = self.compute_robot_yaw_90(marker_yaw_deg)
+            return "robot", raw_yaw_deg, raw_yaw_deg
+
+        raw_cart_yaw_deg = self.compute_cart_yaw_180(marker_id, marker_yaw_deg)
+
+        if raw_cart_yaw_deg is None:
+            return None, None, None
+
+        cart_yaw_deg = self.apply_yaw_snap(raw_cart_yaw_deg)
+        return "cart", raw_cart_yaw_deg, cart_yaw_deg
+
     def compute_cart_yaw_180(self, marker_id, marker_yaw_deg):
         if marker_id not in self.aruco_id_to_cart_yaw_base_deg:
             return None
 
         base_yaw = self.aruco_id_to_cart_yaw_base_deg[marker_id]
         return self.normalize_angle_180(base_yaw + marker_yaw_deg)
+
+    def compute_robot_yaw_90(self, marker_yaw_deg):
+        yaw = self.normalize_angle_180(marker_yaw_deg)
+
+        if yaw > 90.0:
+            yaw -= 180.0
+        elif yaw < -90.0:
+            yaw += 180.0
+
+        return yaw
 
     def normalize_angle_180(self, angle_deg):
         return (float(angle_deg) + 180.0) % 360.0 - 180.0
@@ -531,13 +619,15 @@ class RSArucoNode(Node):
 
         return depth.astype(np.float32)
 
-    def publish_cart_marker(self, pose: Pose2D):
+    def publish_target_marker(self, pose: Pose2D, mode: str):
         now_msg = self.get_clock().now().to_msg()
+
+        ns = f"rs_{mode}"
 
         sphere = Marker()
         sphere.header.stamp = now_msg
         sphere.header.frame_id = self.base_frame
-        sphere.ns = "rs_cart"
+        sphere.ns = ns
         sphere.id = 0
         sphere.type = Marker.SPHERE
         sphere.action = Marker.ADD
@@ -548,9 +638,16 @@ class RSArucoNode(Node):
         sphere.scale.x = 0.18
         sphere.scale.y = 0.18
         sphere.scale.z = 0.18
-        sphere.color.r = 0.0
-        sphere.color.g = 1.0
-        sphere.color.b = 0.0
+
+        if mode == "robot":
+            sphere.color.r = 1.0
+            sphere.color.g = 0.0
+            sphere.color.b = 1.0
+        else:
+            sphere.color.r = 0.0
+            sphere.color.g = 1.0
+            sphere.color.b = 0.0
+
         sphere.color.a = 1.0
         sphere.lifetime.sec = 0
         sphere.lifetime.nanosec = 300000000
@@ -558,16 +655,23 @@ class RSArucoNode(Node):
         arrow = Marker()
         arrow.header.stamp = now_msg
         arrow.header.frame_id = self.base_frame
-        arrow.ns = "rs_cart"
+        arrow.ns = ns
         arrow.id = 1
         arrow.type = Marker.ARROW
         arrow.action = Marker.ADD
         arrow.scale.x = 0.05
         arrow.scale.y = 0.10
         arrow.scale.z = 0.10
-        arrow.color.r = 1.0
-        arrow.color.g = 0.5
-        arrow.color.b = 0.0
+
+        if mode == "robot":
+            arrow.color.r = 1.0
+            arrow.color.g = 0.0
+            arrow.color.b = 1.0
+        else:
+            arrow.color.r = 1.0
+            arrow.color.g = 0.5
+            arrow.color.b = 0.0
+
         arrow.color.a = 1.0
         arrow.lifetime.sec = 0
         arrow.lifetime.nanosec = 300000000
@@ -590,7 +694,7 @@ class RSArucoNode(Node):
         text = Marker()
         text.header.stamp = now_msg
         text.header.frame_id = self.base_frame
-        text.ns = "rs_cart"
+        text.ns = ns
         text.id = 2
         text.type = Marker.TEXT_VIEW_FACING
         text.action = Marker.ADD
@@ -604,6 +708,7 @@ class RSArucoNode(Node):
         text.color.b = 1.0
         text.color.a = 1.0
         text.text = (
+            f"{mode.upper()} "
             f"x={pose.x:.2f} m, y={pose.y:.2f} m, "
             f"yaw={math.degrees(pose.theta):.1f} deg"
         )
@@ -613,14 +718,21 @@ class RSArucoNode(Node):
         line = Marker()
         line.header.stamp = now_msg
         line.header.frame_id = self.base_frame
-        line.ns = "rs_cart"
+        line.ns = ns
         line.id = 3
         line.type = Marker.LINE_STRIP
         line.action = Marker.ADD
         line.scale.x = 0.025
-        line.color.r = 0.0
-        line.color.g = 0.7
-        line.color.b = 1.0
+
+        if mode == "robot":
+            line.color.r = 1.0
+            line.color.g = 0.0
+            line.color.b = 1.0
+        else:
+            line.color.r = 0.0
+            line.color.g = 0.7
+            line.color.b = 1.0
+
         line.color.a = 1.0
         line.lifetime.sec = 0
         line.lifetime.nanosec = 300000000
@@ -687,9 +799,11 @@ class RSArucoNode(Node):
         self,
         image,
         marker_id,
+        mode,
         pose,
         raw_yaw_deg,
-        snapped_yaw_deg,
+        output_yaw_deg,
+        marker_length_m,
         pnp_xyz,
         depth_xyz,
         used_source,
@@ -701,10 +815,12 @@ class RSArucoNode(Node):
         pnp_text = f"{pnp_z:.3f} m" if pnp_z is not None else "None"
 
         lines = [
+            f"Mode: {mode.upper()}",
             f"ArUco ID: {marker_id}",
+            f"marker size={marker_length_m:.2f} m",
             f"x={pose.x:.3f} m, y={pose.y:.3f} m",
             f"raw yaw={raw_yaw_deg:.1f} deg",
-            f"yaw={snapped_yaw_deg:.1f} deg",
+            f"yaw={output_yaw_deg:.1f} deg",
             f"theta={pose.theta:.3f} rad",
             f"used={used_source}",
             f"depth z={depth_text}",
