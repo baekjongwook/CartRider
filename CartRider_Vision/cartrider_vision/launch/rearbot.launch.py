@@ -78,7 +78,8 @@ def generate_launch_description():
                 "depth_topic": "camera/aligned_depth_to_color/image_raw",
                 "camera_info_topic": "camera/color/camera_info",
                 "base_frame": base_frame,
-                "cart_pose_topic": "cart_pose",
+                "target_pose_topic": "target_pose",
+                "target_type_topic": "target_type",
                 "marker_topic": "marker",
                 "show_window": ParameterValue(
                     LaunchConfiguration("show_window"),

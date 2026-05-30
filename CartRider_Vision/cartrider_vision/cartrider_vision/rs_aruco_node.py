@@ -14,6 +14,7 @@ from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import Point, PointStamped, Pose2D
+from std_msgs.msg import Int32
 from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge
 from message_filters import Subscriber, ApproximateTimeSynchronizer
@@ -31,8 +32,8 @@ class RSArucoNode(Node):
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("base_frame", "base_link")
 
-        self.declare_parameter("cart_pose_topic", "/rs/cart_pose")
-        self.declare_parameter("robot_pose_topic", "/rs/robot_pose")
+        self.declare_parameter("target_pose_topic", "/rs/target_pose")
+        self.declare_parameter("target_type_topic", "/rs/target_type")
         self.declare_parameter("marker_topic", "/rs/marker")
 
         self.declare_parameter("show_window", True)
@@ -72,8 +73,8 @@ class RSArucoNode(Node):
         self.camera_info_topic = self.get_parameter("camera_info_topic").value
         self.base_frame = self.get_parameter("base_frame").value
 
-        self.cart_pose_topic = self.get_parameter("cart_pose_topic").value
-        self.robot_pose_topic = self.get_parameter("robot_pose_topic").value
+        self.target_pose_topic = self.get_parameter("target_pose_topic").value
+        self.target_type_topic = self.get_parameter("target_type_topic").value
         self.marker_topic = self.get_parameter("marker_topic").value
 
         self.show_window = bool(self.get_parameter("show_window").value)
@@ -183,15 +184,15 @@ class RSArucoNode(Node):
         )
         self.sync.registerCallback(self.image_callback)
 
-        self.cart_pose_pub = self.create_publisher(
+        self.target_pose_pub = self.create_publisher(
             Pose2D,
-            self.cart_pose_topic,
+            self.target_pose_topic,
             10,
         )
 
-        self.robot_pose_pub = self.create_publisher(
-            Pose2D,
-            self.robot_pose_topic,
+        self.target_type_pub = self.create_publisher(
+            Int32,
+            self.target_type_topic,
             10,
         )
 
@@ -209,8 +210,8 @@ class RSArucoNode(Node):
         self.get_logger().info(f"Depth topic           : {self.depth_topic}")
         self.get_logger().info(f"Camera info topic     : {self.camera_info_topic}")
         self.get_logger().info(f"Base frame            : {self.base_frame}")
-        self.get_logger().info(f"Cart pose topic       : {self.cart_pose_topic}")
-        self.get_logger().info(f"Robot pose topic      : {self.robot_pose_topic}")
+        self.get_logger().info(f"Target pose topic     : {self.target_pose_topic}")
+        self.get_logger().info(f"Target type topic     : {self.target_type_topic}")
         self.get_logger().info(f"Marker topic          : {self.marker_topic}")
         self.get_logger().info(
             f"Cart marker length    : {self.cart_marker_length_m:.3f} m"
@@ -222,10 +223,7 @@ class RSArucoNode(Node):
         self.get_logger().info("Detection             : largest ArUco only")
         self.get_logger().info("Position              : depth first, PnP fallback")
         self.get_logger().info(
-            "Cart output           : ID 0,1,2,3 -> Pose2D x[m], y[m], theta[rad]"
-        )
-        self.get_logger().info(
-            f"Robot output          : ID {self.robot_marker_id} -> Pose2D x[m], y[m], theta[rad]"
+            "Target output         : Pose2D x[m], y[m], theta[rad] + Int32 robot=1/cart=2"
         )
         self.get_logger().info(f"Yaw snap enable       : {self.yaw_snap_enable}")
         self.get_logger().info(
@@ -343,8 +341,6 @@ class RSArucoNode(Node):
             pose.x = float(marker_x)
             pose.y = float(marker_y)
             pose.theta = math.radians(float(output_yaw_deg))
-
-            self.robot_pose_pub.publish(pose)
         else:
             cart_x, cart_y = self.marker_to_cart_center(
                 marker_id,
@@ -358,7 +354,7 @@ class RSArucoNode(Node):
             pose.y = float(cart_y)
             pose.theta = math.radians(float(output_yaw_deg))
 
-            self.cart_pose_pub.publish(pose)
+        self.publish_target_pose(pose, mode)
 
         self.publish_target_marker(pose, mode)
 
@@ -410,6 +406,13 @@ class RSArucoNode(Node):
         corners_full = corners[best_idx].reshape(4, 2).astype(np.float32)
 
         return marker_id, corners_full
+
+    def publish_target_pose(self, pose: Pose2D, mode: str):
+        type_msg = Int32()
+        type_msg.data = 1 if mode == "robot" else 2
+
+        self.target_type_pub.publish(type_msg)
+        self.target_pose_pub.publish(pose)
 
     def get_marker_length_m(self, marker_id):
         if marker_id == self.robot_marker_id:
