@@ -32,9 +32,9 @@ class RSArucoNode(Node):
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("base_frame", "base_link")
 
-        self.declare_parameter("target_pose_topic", "/rs/target_pose")
-        self.declare_parameter("target_type_topic", "/rs/target_type")
-        self.declare_parameter("marker_topic", "/rs/marker")
+        self.declare_parameter("target_pose_topic", "/target_pose")
+        self.declare_parameter("target_type_topic", "/target_type")
+        self.declare_parameter("marker_topic", "/target_marker")
 
         self.declare_parameter("show_window", True)
         self.declare_parameter("window_name", "RS ArUco Docking Pose")
@@ -185,7 +185,7 @@ class RSArucoNode(Node):
         self.sync.registerCallback(self.image_callback)
 
         self.target_pose_pub = self.create_publisher(
-            Pose2D,
+            PointStamped,
             self.target_pose_topic,
             10,
         )
@@ -223,7 +223,7 @@ class RSArucoNode(Node):
         self.get_logger().info("Detection             : largest ArUco only")
         self.get_logger().info("Position              : depth first, PnP fallback")
         self.get_logger().info(
-            "Target output         : Pose2D x[m], y[m], theta[rad] + Int32 robot=1/cart=2"
+            "Target output         : PointStamped x[m], y[m], z=yaw[rad], frame_id=aruco_<id> + Int32 robot=1/cart=2"
         )
         self.get_logger().info(f"Yaw snap enable       : {self.yaw_snap_enable}")
         self.get_logger().info(
@@ -354,7 +354,7 @@ class RSArucoNode(Node):
             pose.y = float(cart_y)
             pose.theta = math.radians(float(output_yaw_deg))
 
-        self.publish_target_pose(pose, mode)
+        self.publish_target_pose(pose, mode, marker_id, rgb_msg.header.stamp)
 
         self.publish_target_marker(pose, mode)
 
@@ -407,12 +407,19 @@ class RSArucoNode(Node):
 
         return marker_id, corners_full
 
-    def publish_target_pose(self, pose: Pose2D, mode: str):
+    def publish_target_pose(self, pose: Pose2D, mode: str, marker_id: int, stamp):
+        target_msg = PointStamped()
+        target_msg.header.stamp = stamp
+        target_msg.header.frame_id = f"aruco_{int(marker_id)}"
+        target_msg.point.x = float(pose.x)
+        target_msg.point.y = float(pose.y)
+        target_msg.point.z = float(pose.theta)
+
         type_msg = Int32()
         type_msg.data = 1 if mode == "robot" else 2
 
         self.target_type_pub.publish(type_msg)
-        self.target_pose_pub.publish(pose)
+        self.target_pose_pub.publish(target_msg)
 
     def get_marker_length_m(self, marker_id):
         if marker_id == self.robot_marker_id:

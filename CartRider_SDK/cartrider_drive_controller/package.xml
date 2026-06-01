@@ -25,6 +25,9 @@
   <depend>cartrider_vesc_sdk</depend>
   <depend>cartrider_dynamixel_sdk</depend>
 
+  <exec_depend>cap_sim_2026</exec_depend>
+  <exec_depend>domain_bridge</exec_depend>
+  <exec_depend>joy</exec_depend>
   <exec_depend>python3-matplotlib</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>

@@ -10,12 +10,19 @@ import os
 def generate_launch_description():
 
     controller_pkg_share = get_package_share_directory("cartrider_drive_controller")
+    cap_sim_pkg_share = get_package_share_directory("cap_sim_2026")
     rmd_pkg_share = get_package_share_directory("cartrider_rmd_sdk")
     dynamixel_pkg_share = get_package_share_directory("cartrider_dynamixel_sdk")
 
     rearbot_param_file = os.path.join(controller_pkg_share, "param", "rearbot.yaml")
     frontbot_param_file = os.path.join(controller_pkg_share, "param", "frontbot.yaml")
 
+    joy_launch_file = os.path.join(controller_pkg_share, "launch", "joy.launch.py")
+    domain_bridge_launch_file = os.path.join(
+        cap_sim_pkg_share,
+        "launch",
+        "front2rear_domain_bridge.launch.py",
+    )
     rmd_launch_file = os.path.join(rmd_pkg_share, "launch", "bringup.launch.py")
     dynamixel_launch_file = os.path.join(
         dynamixel_pkg_share, "launch", "bringup.launch.py"
@@ -55,8 +62,18 @@ def generate_launch_description():
         }.items(),
     )
 
+    joy_bringup = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(joy_launch_file),
+    )
+
+    domain_bridge_bringup = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(domain_bridge_launch_file),
+    )
+
     return LaunchDescription(
         [
+            domain_bridge_bringup,
+            joy_bringup,
             rmd_bringup,
             dynamixel_bringup,
             rearbot_node,

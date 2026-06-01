@@ -40,8 +40,8 @@ def generate_launch_description():
                     "pointcloud.enable": "true",
                     "enable_gyro": "false",
                     "enable_accel": "false",
-                    "rgb_camera.color_profile": "424x240x6",
-                    "depth_module.depth_profile": "480x270x6",
+                    "rgb_camera.color_profile": "424x240x15",
+                    "depth_module.depth_profile": "480x270x15",
                 }.items(),
             ),
         ],
@@ -168,6 +168,6 @@ def generate_launch_description():
             realsense,
             base_to_rs_tf,
             rs_aruco_node,
-            rs_pcd_node,
+            # rs_pcd_node,
         ]
     )

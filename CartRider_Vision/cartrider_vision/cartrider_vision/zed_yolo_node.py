@@ -7,7 +7,7 @@ import threading
 import cv2
 import numpy as np
 import rclpy
-import tf2_geometry_msgs
+import tf2_geometry_msgs  # Registers PointStamped transforms with tf2.
 
 from rclpy.node import Node
 from rclpy.duration import Duration
@@ -15,7 +15,7 @@ from rclpy.time import Time
 from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Point, PointStamped, PoseStamped
+from geometry_msgs.msg import Point, PointStamped
 from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge
 from ultralytics import YOLO
@@ -37,11 +37,8 @@ class ZedYoloNode(Node):
             "camera_info_topic", "/zed/zed_node/rgb/color/rect/camera_info"
         )
 
-        self.declare_parameter("nav_goal_topic", "/vision/nav_goal_pose")
-        self.declare_parameter("target_camera_topic", "/vision/zed_yolo/target_camera")
-        self.declare_parameter("target_base_topic", "/vision/zed_yolo/target_base")
-        self.declare_parameter("target_ground_topic", "/vision/zed_yolo/target_ground")
-        self.declare_parameter("marker_topic", "/vision/zed_yolo/marker")
+        self.declare_parameter("cart_target_topic", "/zed_yolo/global_cart_target")
+        self.declare_parameter("marker_topic", "/zed_yolo/marker")
 
         self.declare_parameter("model_package", "cartrider_vision")
         self.declare_parameter("model_file", "cart_1400.pt")
@@ -51,27 +48,16 @@ class ZedYoloNode(Node):
         self.declare_parameter("target_class_id", 0)
         self.declare_parameter("conf_thres", 0.4)
 
-        self.declare_parameter("confirm_time_sec", 2.0)
-        self.declare_parameter("confirm_min_count", 6)
-        self.declare_parameter("confirm_avg_conf_thres", 0.55)
-        self.declare_parameter("confirm_xy_std_max_m", 0.35)
-
         self.declare_parameter("max_rgb_depth_dt_sec", 0.20)
 
         self.declare_parameter("depth_min_m", 0.2)
         self.declare_parameter("depth_max_m", 20.0)
-        self.declare_parameter("accept_min_m", 0.2)
-        self.declare_parameter("accept_max_m", 10.0)
-        self.declare_parameter("max_distance_jump_m", 2.5)
-        self.declare_parameter("ema_alpha", 0.4)
 
         self.declare_parameter("roi_ratio_w", 0.25)
         self.declare_parameter("roi_ratio_h", 0.25)
         self.declare_parameter("roi_center_y_ratio", 0.45)
 
-        self.declare_parameter("goal_standoff_m", 0.0)
-        self.declare_parameter("publish_once", True)
-        self.declare_parameter("reset_when_lost_sec", 2.0)
+        self.declare_parameter("cart_target_publish_period_sec", 1.0)
 
         self.declare_parameter("show_debug_window", True)
         self.declare_parameter("window_name", "ZED YOLO Detect")
@@ -82,10 +68,7 @@ class ZedYoloNode(Node):
         self.depth_topic = self.get_parameter("depth_topic").value
         self.camera_info_topic = self.get_parameter("camera_info_topic").value
 
-        self.nav_goal_topic = self.get_parameter("nav_goal_topic").value
-        self.target_camera_topic = self.get_parameter("target_camera_topic").value
-        self.target_base_topic = self.get_parameter("target_base_topic").value
-        self.target_ground_topic = self.get_parameter("target_ground_topic").value
+        self.cart_target_topic = self.get_parameter("cart_target_topic").value
         self.marker_topic = self.get_parameter("marker_topic").value
 
         self.model_package = self.get_parameter("model_package").value
@@ -98,36 +81,19 @@ class ZedYoloNode(Node):
         self.target_class_id = int(self.get_parameter("target_class_id").value)
         self.conf_thres = float(self.get_parameter("conf_thres").value)
 
-        self.confirm_time_sec = float(self.get_parameter("confirm_time_sec").value)
-        self.confirm_min_count = int(self.get_parameter("confirm_min_count").value)
-        self.confirm_avg_conf_thres = float(
-            self.get_parameter("confirm_avg_conf_thres").value
-        )
-        self.confirm_xy_std_max_m = float(
-            self.get_parameter("confirm_xy_std_max_m").value
-        )
-
         self.max_rgb_depth_dt_sec = float(
             self.get_parameter("max_rgb_depth_dt_sec").value
         )
 
         self.depth_min_m = float(self.get_parameter("depth_min_m").value)
         self.depth_max_m = float(self.get_parameter("depth_max_m").value)
-        self.accept_min_m = float(self.get_parameter("accept_min_m").value)
-        self.accept_max_m = float(self.get_parameter("accept_max_m").value)
-        self.max_distance_jump_m = float(
-            self.get_parameter("max_distance_jump_m").value
-        )
-        self.ema_alpha = float(self.get_parameter("ema_alpha").value)
 
         self.roi_ratio_w = float(self.get_parameter("roi_ratio_w").value)
         self.roi_ratio_h = float(self.get_parameter("roi_ratio_h").value)
         self.roi_center_y_ratio = float(self.get_parameter("roi_center_y_ratio").value)
 
-        self.goal_standoff_m = float(self.get_parameter("goal_standoff_m").value)
-        self.publish_once = bool(self.get_parameter("publish_once").value)
-        self.reset_when_lost_sec = float(
-            self.get_parameter("reset_when_lost_sec").value
+        self.cart_target_publish_period_sec = float(
+            self.get_parameter("cart_target_publish_period_sec").value
         )
 
         self.show_debug_window = bool(self.get_parameter("show_debug_window").value)
@@ -144,10 +110,7 @@ class ZedYoloNode(Node):
         self.cy = None
 
         self.processing = False
-        self.confirm_buffer = []
-        self.filtered_distance_m = None
-        self.nav_goal_sent = False
-        self.last_detection_time = None
+        self.last_cart_target_publish_time = None
         self.last_tf_warn_time = None
         self.last_state_warn_time = None
 
@@ -191,15 +154,8 @@ class ZedYoloNode(Node):
             qos_profile_sensor_data,
         )
 
-        self.nav_goal_pub = self.create_publisher(PoseStamped, self.nav_goal_topic, 10)
-        self.target_camera_pub = self.create_publisher(
-            PointStamped, self.target_camera_topic, 10
-        )
-        self.target_base_pub = self.create_publisher(
-            PointStamped, self.target_base_topic, 10
-        )
-        self.target_ground_pub = self.create_publisher(
-            PointStamped, self.target_ground_topic, 10
+        self.cart_target_pub = self.create_publisher(
+            PointStamped, self.cart_target_topic, 10
         )
         self.marker_pub = self.create_publisher(Marker, self.marker_topic, 10)
 
@@ -224,17 +180,15 @@ class ZedYoloNode(Node):
         self.get_logger().info(f"RGB topic           : {self.rgb_topic}")
         self.get_logger().info(f"Depth topic         : {self.depth_topic}")
         self.get_logger().info(f"Camera info topic   : {self.camera_info_topic}")
-        self.get_logger().info(f"Nav goal topic      : {self.nav_goal_topic}")
+        self.get_logger().info(f"Cart target topic   : {self.cart_target_topic}")
+        self.get_logger().info(f"Marker topic        : {self.marker_topic}")
         self.get_logger().info(f"Model path          : {self.model_path}")
         self.get_logger().info(f"Processing rate     : {self.process_hz:.1f} Hz")
         self.get_logger().info(f"YOLO imgsz          : {self.yolo_imgsz}")
         self.get_logger().info(f"Target class id     : {self.target_class_id}")
         self.get_logger().info(f"Confidence threshold: {self.conf_thres:.2f}")
-        self.get_logger().info(f"Confirm time        : {self.confirm_time_sec:.2f} sec")
-        self.get_logger().info(f"Confirm min count   : {self.confirm_min_count}")
-        self.get_logger().info(f"Publish once        : {self.publish_once}")
         self.get_logger().info(
-            "Output: YOLO target point -> TF base_frame -> Nav2 PoseStamped goal"
+            "Output: cart target PointStamped every 1 sec and visualization marker"
         )
 
     def rgb_callback(self, msg: Image):
@@ -320,7 +274,7 @@ class ZedYoloNode(Node):
             self.show_debug_image(annotated)
             return
 
-        x1, y1, x2, y2, conf = best_candidate
+        x1, y1, x2, y2, _conf = best_candidate
 
         roi_box = self.compute_depth_roi(
             x1,
@@ -348,21 +302,13 @@ class ZedYoloNode(Node):
             self.show_debug_image(annotated)
             return
 
-        if not self.is_distance_reasonable(raw_distance_m):
-            self.handle_no_detection()
-            self.draw_detection(annotated, x1, y1, x2, y2, rx1, ry1, rx2, ry2, None)
-            self.show_debug_image(annotated)
-            return
-
-        self.filtered_distance_m = self.apply_ema(raw_distance_m)
-
         x_cam, y_cam, z_cam = self.pixel_to_camera_3d(
             roi_cx,
             roi_cy,
-            self.filtered_distance_m,
+            raw_distance_m,
         )
 
-        base_msg = self.publish_target_points(
+        base_msg = self.transform_target_point(
             rgb_msg,
             x_cam,
             y_cam,
@@ -379,31 +325,15 @@ class ZedYoloNode(Node):
             ry1,
             rx2,
             ry2,
-            self.filtered_distance_m,
+            raw_distance_m,
         )
 
         if base_msg is None:
             self.show_debug_image(annotated)
             return
 
-        self.last_detection_time = self.get_clock().now()
-
-        self.add_confirm_sample(
-            {
-                "time": self.last_detection_time,
-                "x": float(base_msg.point.x),
-                "y": float(base_msg.point.y),
-                "z": float(base_msg.point.z),
-                "conf": float(conf),
-            }
-        )
-
-        confirmed, mean_x, mean_y, avg_conf, elapsed_sec = self.check_confirmed()
-
-        if confirmed:
-            if (not self.publish_once) or (not self.nav_goal_sent):
-                self.publish_nav_goal(mean_x, mean_y)
-                self.nav_goal_sent = True
+        if self.should_publish_cart_target():
+            self.publish_cart_target_ground(base_msg.point.x, base_msg.point.y)
 
         self.show_debug_image(annotated)
 
@@ -446,66 +376,10 @@ class ZedYoloNode(Node):
 
         return best_candidate
 
-    def add_confirm_sample(self, sample):
-        now = self.get_clock().now()
-        self.confirm_buffer.append(sample)
-
-        while len(self.confirm_buffer) > 0:
-            elapsed = (now - self.confirm_buffer[0]["time"]).nanoseconds * 1e-9
-            if elapsed <= self.confirm_time_sec:
-                break
-            self.confirm_buffer.pop(0)
-
-    def check_confirmed(self):
-        if len(self.confirm_buffer) == 0:
-            return False, 0.0, 0.0, 0.0, 0.0
-
-        now = self.get_clock().now()
-        elapsed_sec = (now - self.confirm_buffer[0]["time"]).nanoseconds * 1e-9
-
-        xs = np.array([s["x"] for s in self.confirm_buffer], dtype=np.float32)
-        ys = np.array([s["y"] for s in self.confirm_buffer], dtype=np.float32)
-        confs = np.array([s["conf"] for s in self.confirm_buffer], dtype=np.float32)
-
-        mean_x = float(np.mean(xs))
-        mean_y = float(np.mean(ys))
-        avg_conf = float(np.mean(confs))
-
-        if elapsed_sec < self.confirm_time_sec:
-            return False, mean_x, mean_y, avg_conf, elapsed_sec
-
-        if len(self.confirm_buffer) < self.confirm_min_count:
-            return False, mean_x, mean_y, avg_conf, elapsed_sec
-
-        if avg_conf < self.confirm_avg_conf_thres:
-            return False, mean_x, mean_y, avg_conf, elapsed_sec
-
-        std_x = float(np.std(xs))
-        std_y = float(np.std(ys))
-
-        if std_x > self.confirm_xy_std_max_m or std_y > self.confirm_xy_std_max_m:
-            return False, mean_x, mean_y, avg_conf, elapsed_sec
-
-        return True, mean_x, mean_y, avg_conf, elapsed_sec
-
     def handle_no_detection(self):
-        now = self.get_clock().now()
+        self.last_cart_target_publish_time = None
 
-        if self.last_detection_time is None:
-            self.confirm_buffer.clear()
-            self.filtered_distance_m = None
-            return
-
-        lost_sec = (now - self.last_detection_time).nanoseconds * 1e-9
-
-        if lost_sec >= self.reset_when_lost_sec:
-            self.confirm_buffer.clear()
-            self.filtered_distance_m = None
-
-            if self.publish_once:
-                self.nav_goal_sent = False
-
-    def publish_target_points(
+    def transform_target_point(
         self, rgb_msg: Image, x_cam: float, y_cam: float, z_cam: float
     ):
         camera_msg = PointStamped()
@@ -513,8 +387,6 @@ class ZedYoloNode(Node):
         camera_msg.point.x = float(x_cam)
         camera_msg.point.y = float(y_cam)
         camera_msg.point.z = float(z_cam)
-
-        self.target_camera_pub.publish(camera_msg)
 
         source_frame = camera_msg.header.frame_id
 
@@ -537,7 +409,6 @@ class ZedYoloNode(Node):
             )
 
             base_msg.header.stamp = camera_msg.header.stamp
-            self.target_base_pub.publish(base_msg)
 
             ground_msg = PointStamped()
             ground_msg.header = base_msg.header
@@ -545,7 +416,6 @@ class ZedYoloNode(Node):
             ground_msg.point.y = float(base_msg.point.y)
             ground_msg.point.z = 0.0
 
-            self.target_ground_pub.publish(ground_msg)
             self.publish_target_marker(base_msg, ground_msg)
 
             return base_msg
@@ -556,36 +426,35 @@ class ZedYoloNode(Node):
             )
             return None
 
-    def publish_nav_goal(self, cart_x: float, cart_y: float):
-        goal_x = float(cart_x)
-        goal_y = float(cart_y)
+    def should_publish_cart_target(self):
+        if self.cart_target_publish_period_sec <= 0.0:
+            return True
 
-        distance = math.hypot(goal_x, goal_y)
+        now = self.get_clock().now()
 
-        if self.goal_standoff_m > 0.0 and distance > self.goal_standoff_m:
-            scale = max((distance - self.goal_standoff_m) / distance, 0.0)
-            goal_x *= scale
-            goal_y *= scale
+        if self.last_cart_target_publish_time is None:
+            return True
 
-        yaw_to_cart = math.atan2(cart_y, cart_x)
+        elapsed_sec = (
+            now - self.last_cart_target_publish_time
+        ).nanoseconds * 1e-9
 
-        msg = PoseStamped()
+        return elapsed_sec >= self.cart_target_publish_period_sec
+
+    def publish_cart_target_ground(self, cart_x: float, cart_y: float):
+        msg = PointStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.base_frame
-        msg.pose.position.x = goal_x
-        msg.pose.position.y = goal_y
-        msg.pose.position.z = 0.0
+        msg.point.x = float(cart_x)
+        msg.point.y = float(cart_y)
+        msg.point.z = 0.0
 
-        qz, qw = self.yaw_to_quaternion_z_w(yaw_to_cart)
-        msg.pose.orientation.z = qz
-        msg.pose.orientation.w = qw
-
-        self.nav_goal_pub.publish(msg)
+        self.cart_target_pub.publish(msg)
+        self.last_cart_target_publish_time = self.get_clock().now()
 
         self.get_logger().info(
-            f"Nav goal published: frame={self.base_frame}, "
-            f"x={goal_x:.3f}, y={goal_y:.3f}, "
-            f"yaw_to_cart={math.degrees(yaw_to_cart):.1f} deg"
+            f"Cart target published: frame={self.base_frame}, "
+            f"x={msg.point.x:.3f}, y={msg.point.y:.3f}"
         )
 
     def publish_target_marker(self, base_msg: PointStamped, ground_msg: PointStamped):
@@ -730,25 +599,6 @@ class ZedYoloNode(Node):
 
         return median
 
-    def is_distance_reasonable(self, distance_m: float):
-        if distance_m < self.accept_min_m or distance_m > self.accept_max_m:
-            return False
-
-        if self.filtered_distance_m is not None:
-            if abs(distance_m - self.filtered_distance_m) > self.max_distance_jump_m:
-                return False
-
-        return True
-
-    def apply_ema(self, current_distance_m: float):
-        if self.filtered_distance_m is None:
-            return current_distance_m
-
-        return (
-            self.ema_alpha * current_distance_m
-            + (1.0 - self.ema_alpha) * self.filtered_distance_m
-        )
-
     def is_stamp_close(self, rgb_msg: Image, depth_msg: Image):
         rgb_t = self.stamp_to_sec(rgb_msg.header.stamp)
         depth_t = self.stamp_to_sec(depth_msg.header.stamp)
@@ -766,9 +616,6 @@ class ZedYoloNode(Node):
 
     def stamp_to_sec(self, stamp):
         return float(stamp.sec) + float(stamp.nanosec) * 1e-9
-
-    def yaw_to_quaternion_z_w(self, yaw_rad: float):
-        return math.sin(yaw_rad * 0.5), math.cos(yaw_rad * 0.5)
 
     def draw_detection(
         self,

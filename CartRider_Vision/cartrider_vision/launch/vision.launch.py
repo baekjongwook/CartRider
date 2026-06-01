@@ -25,6 +25,12 @@ def generate_launch_description():
         executable="zed_yolo_node",
         name="zed_yolo_node",
         output="screen",
+        parameters=[
+            {
+                "conf_thres": 0.25,
+                "cart_target_publish_period_sec": 1.0,
+            }
+        ],
     )
 
     return LaunchDescription(
