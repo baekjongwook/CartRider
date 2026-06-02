@@ -1,5 +1,10 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    GroupAction,
+    ExecuteProcess,
+)
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
@@ -20,6 +25,72 @@ def generate_launch_description():
 
     base_frame = LaunchConfiguration("base_frame")
     rs_frame = LaunchConfiguration("rs_frame")
+
+    zed_param_overrides = (
+        "general.grab_resolution:=VGA;"
+        "general.grab_frame_rate:=10;"
+        "general.pub_resolution:=CUSTOM;"
+        "general.pub_downscale_factor:=3.0;"
+        "general.pub_frame_rate:=10.0;"
+        "general.self_calib:=false;"
+        "general.publish_status:=false;"
+        "video.publish_rgb:=true;"
+        "video.publish_left_right:=false;"
+        "video.publish_raw:=false;"
+        "video.publish_gray:=false;"
+        "video.publish_stereo:=false;"
+        "depth.depth_mode:=PERFORMANCE;"
+        "depth.depth_stabilization:=0;"
+        "depth.openni_depth_mode:=false;"
+        "depth.point_cloud_freq:=1.0;"
+        "depth.point_cloud_res:=REDUCED;"
+        "depth.publish_depth_map:=true;"
+        "depth.publish_depth_info:=false;"
+        "depth.publish_point_cloud:=false;"
+        "depth.publish_depth_confidence:=false;"
+        "depth.publish_disparity:=false;"
+        "sensors.publish_imu_tf:=false;"
+        "sensors.sensors_pub_rate:=10.0;"
+        "sensors.publish_imu:=false;"
+        "sensors.publish_imu_raw:=false;"
+        "sensors.publish_cam_imu_transf:=false;"
+        "sensors.publish_mag:=false;"
+        "sensors.publish_baro:=false;"
+        "sensors.publish_temp:=false;"
+        "pos_tracking.pos_tracking_enabled:=false;"
+        "pos_tracking.publish_tf:=false;"
+        "pos_tracking.publish_map_tf:=false;"
+        "pos_tracking.publish_odom_pose:=false;"
+        "pos_tracking.publish_pose_cov:=false;"
+        "pos_tracking.publish_cam_path:=false;"
+        "mapping.mapping_enabled:=false;"
+        "object_detection.od_enabled:=false;"
+        "body_tracking.bt_enabled:=false;"
+        "stream_server.stream_enabled:=false;"
+        "debug.sdk_verbose:=0"
+    )
+
+    zed_camera = ExecuteProcess(
+        cmd=[
+            "bash",
+            "-lc",
+            (
+                "source /opt/ros/humble/setup.bash && "
+                "if [ -f /home/baek/zed_ws/install/local_setup.bash ]; then "
+                "source /home/baek/zed_ws/install/local_setup.bash; "
+                "fi && "
+                "export CUDA_HOME=/usr/local/cuda-13.0 && "
+                "export CUDACXX=/usr/local/cuda-13.0/bin/nvcc && "
+                "export PATH=/usr/local/cuda-13.0/bin:$PATH && "
+                "export LD_LIBRARY_PATH=/usr/local/cuda-13.0/lib64:$LD_LIBRARY_PATH && "
+                "echo 'Starting ZED lightweight mode...' && "
+                f"ros2 launch zed_wrapper zed_camera.launch.py "
+                f"camera_model:=zed2 "
+                f'param_overrides:="{zed_param_overrides}"'
+            ),
+        ],
+        output="screen",
+    )
 
     realsense = GroupAction(
         [
@@ -127,24 +198,41 @@ def generate_launch_description():
         ],
     )
 
-    rs_pcd_node = Node(
+    base_to_zed_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_to_zed_tf",
+        arguments=[
+            "0.202417",
+            "0.001281",
+            "1.121693",
+            "0.0",
+            "0.087156",
+            "0.0",
+            "0.996195",
+            "base_link",
+            "zed_camera_link",
+        ],
+        output="screen",
+    )
+
+    zed_yolo_node = Node(
         package="cartrider_vision",
-        executable="rs_pcd_node",
-        namespace="rear",
-        name="rs_pcd_node",
+        executable="zed_yolo_node",
+        name="zed_yolo_node",
         output="screen",
         parameters=[
             {
-                "input_cloud_topic": "camera/depth/color/points",
-                "output_cloud_topic": "camera/depth/voxel_cloud",
-                "target_frame": base_frame,
-                "voxel_size": 0.05,
-                "crop_min_x": 0.2,
-                "crop_max_x": 2.5,
-                "crop_min_y": -1.0,
-                "crop_max_y": 1.0,
-                "crop_min_z": 0.05,
-                "crop_max_z": 1.5,
+                "base_frame": "base_link",
+                "rgb_topic": "/zed/zed_node/rgb/color/rect/image",
+                "depth_topic": "/zed/zed_node/depth/depth_registered",
+                "camera_info_topic": "/zed/zed_node/rgb/color/rect/camera_info",
+                "aruco_target_pose_topic": "/rear/target_pose",
+                "conf_thres": 0.25,
+                "process_hz": 10.0,
+                "cart_target_publish_period_sec": 1.0,
+                "require_aruco_detection": True,
+                "aruco_detection_timeout_sec": 1.5,
             }
         ],
     )
@@ -165,9 +253,11 @@ def generate_launch_description():
             DeclareLaunchArgument("yaw_snap_zero_max_deg", default_value="5.0"),
             DeclareLaunchArgument("yaw_snap_180_min_deg", default_value="175.0"),
             DeclareLaunchArgument("yaw_snap_180_max_deg", default_value="180.0"),
+            zed_camera,
             realsense,
             base_to_rs_tf,
             rs_aruco_node,
-            # rs_pcd_node,
+            base_to_zed_tf,
+            zed_yolo_node,
         ]
     )

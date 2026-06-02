@@ -7,7 +7,7 @@ import threading
 import cv2
 import numpy as np
 import rclpy
-import tf2_geometry_msgs  # Registers PointStamped transforms with tf2.
+import tf2_geometry_msgs  # noqa: F401
 
 from rclpy.node import Node
 from rclpy.duration import Duration
@@ -31,14 +31,24 @@ class ZedYoloNode(Node):
 
         self.declare_parameter("base_frame", "base_link")
 
-        self.declare_parameter("rgb_topic", "/zed/zed_node/rgb/color/rect/image")
-        self.declare_parameter("depth_topic", "/zed/zed_node/depth/depth_registered")
+        self.declare_parameter(
+            "rgb_topic",
+            "/zed/zed_node/rgb/color/rect/image",
+        )
+        self.declare_parameter(
+            "depth_topic",
+            "/zed/zed_node/depth/depth_registered",
+        )
         self.declare_parameter(
             "camera_info_topic", "/zed/zed_node/rgb/color/rect/camera_info"
         )
 
-        self.declare_parameter("cart_target_topic", "/zed_yolo/global_cart_target")
+        self.declare_parameter(
+            "cart_target_topic",
+            "/zed_yolo/global_cart_target",
+        )
         self.declare_parameter("marker_topic", "/zed_yolo/marker")
+        self.declare_parameter("aruco_target_pose_topic", "/target_pose")
 
         self.declare_parameter("model_package", "cartrider_vision")
         self.declare_parameter("model_file", "cart_1400.pt")
@@ -58,6 +68,8 @@ class ZedYoloNode(Node):
         self.declare_parameter("roi_center_y_ratio", 0.45)
 
         self.declare_parameter("cart_target_publish_period_sec", 1.0)
+        self.declare_parameter("require_aruco_detection", True)
+        self.declare_parameter("aruco_detection_timeout_sec", 1.0)
 
         self.declare_parameter("show_debug_window", True)
         self.declare_parameter("window_name", "ZED YOLO Detect")
@@ -70,6 +82,9 @@ class ZedYoloNode(Node):
 
         self.cart_target_topic = self.get_parameter("cart_target_topic").value
         self.marker_topic = self.get_parameter("marker_topic").value
+        self.aruco_target_pose_topic = self.get_parameter(
+            "aruco_target_pose_topic"
+        ).value
 
         self.model_package = self.get_parameter("model_package").value
         self.model_file = self.get_parameter("model_file").value
@@ -90,13 +105,23 @@ class ZedYoloNode(Node):
 
         self.roi_ratio_w = float(self.get_parameter("roi_ratio_w").value)
         self.roi_ratio_h = float(self.get_parameter("roi_ratio_h").value)
-        self.roi_center_y_ratio = float(self.get_parameter("roi_center_y_ratio").value)
+        self.roi_center_y_ratio = float(
+            self.get_parameter("roi_center_y_ratio").value
+        )
 
         self.cart_target_publish_period_sec = float(
             self.get_parameter("cart_target_publish_period_sec").value
         )
+        self.require_aruco_detection = bool(
+            self.get_parameter("require_aruco_detection").value
+        )
+        self.aruco_detection_timeout_sec = float(
+            self.get_parameter("aruco_detection_timeout_sec").value
+        )
 
-        self.show_debug_window = bool(self.get_parameter("show_debug_window").value)
+        self.show_debug_window = bool(
+            self.get_parameter("show_debug_window").value
+        )
         self.window_name = self.get_parameter("window_name").value
 
         self.latest_lock = threading.Lock()
@@ -111,6 +136,7 @@ class ZedYoloNode(Node):
 
         self.processing = False
         self.last_cart_target_publish_time = None
+        self.last_aruco_detection_time = None
         self.last_tf_warn_time = None
         self.last_state_warn_time = None
 
@@ -118,7 +144,11 @@ class ZedYoloNode(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         package_share_dir = get_package_share_directory(self.model_package)
-        self.model_path = os.path.join(package_share_dir, "models", self.model_file)
+        self.model_path = os.path.join(
+            package_share_dir,
+            "models",
+            self.model_file,
+        )
 
         if not os.path.exists(self.model_path):
             self.get_logger().error(f"YOLO model not found: {self.model_path}")
@@ -131,7 +161,9 @@ class ZedYoloNode(Node):
             self.model.to("cuda")
             self.get_logger().info("YOLO model moved to CUDA.")
         except Exception:
-            self.get_logger().warn("CUDA not available for YOLO. Using default device.")
+            self.get_logger().warn(
+                "CUDA not available for YOLO. Using default device."
+            )
 
         self.rgb_sub = self.create_subscription(
             Image,
@@ -152,6 +184,13 @@ class ZedYoloNode(Node):
             self.camera_info_topic,
             self.camera_info_callback,
             qos_profile_sensor_data,
+        )
+
+        self.aruco_target_pose_sub = self.create_subscription(
+            PointStamped,
+            self.aruco_target_pose_topic,
+            self.aruco_target_pose_callback,
+            10,
         )
 
         self.cart_target_pub = self.create_publisher(
@@ -179,16 +218,32 @@ class ZedYoloNode(Node):
         self.get_logger().info(f"Base frame          : {self.base_frame}")
         self.get_logger().info(f"RGB topic           : {self.rgb_topic}")
         self.get_logger().info(f"Depth topic         : {self.depth_topic}")
-        self.get_logger().info(f"Camera info topic   : {self.camera_info_topic}")
-        self.get_logger().info(f"Cart target topic   : {self.cart_target_topic}")
+        self.get_logger().info(
+            f"Camera info topic   : {self.camera_info_topic}"
+        )
+        self.get_logger().info(
+            f"Cart target topic   : {self.cart_target_topic}"
+        )
         self.get_logger().info(f"Marker topic        : {self.marker_topic}")
+        self.get_logger().info(
+            f"ArUco pose topic    : {self.aruco_target_pose_topic}"
+        )
+        self.get_logger().info(
+            f"Require ArUco       : {self.require_aruco_detection}"
+        )
+        self.get_logger().info(
+            f"ArUco timeout       : {self.aruco_detection_timeout_sec:.2f} sec"
+        )
         self.get_logger().info(f"Model path          : {self.model_path}")
-        self.get_logger().info(f"Processing rate     : {self.process_hz:.1f} Hz")
+        self.get_logger().info(
+            f"Processing rate     : {self.process_hz:.1f} Hz"
+        )
         self.get_logger().info(f"YOLO imgsz          : {self.yolo_imgsz}")
         self.get_logger().info(f"Target class id     : {self.target_class_id}")
         self.get_logger().info(f"Confidence threshold: {self.conf_thres:.2f}")
         self.get_logger().info(
-            "Output: cart target PointStamped every 1 sec and visualization marker"
+            "Output: YOLO bbox/cart target only when recent ArUco pose "
+            "is received"
         )
 
     def rgb_callback(self, msg: Image):
@@ -212,6 +267,9 @@ class ZedYoloNode(Node):
                 f"fx={self.fx:.3f}, fy={self.fy:.3f}, "
                 f"cx={self.cx:.3f}, cy={self.cy:.3f}"
             )
+
+    def aruco_target_pose_callback(self, msg: PointStamped):
+        self.last_aruco_detection_time = self.get_clock().now()
 
     def process_latest_frame(self):
         if self.processing:
@@ -245,7 +303,10 @@ class ZedYoloNode(Node):
             return
 
         try:
-            depth = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
+            depth = self.bridge.imgmsg_to_cv2(
+                depth_msg,
+                desired_encoding="passthrough",
+            )
         except Exception as e:
             self.get_logger().error(f"Failed to convert depth image: {e}")
             return
@@ -256,6 +317,15 @@ class ZedYoloNode(Node):
             return
 
         annotated = frame.copy()
+
+        if not self.has_recent_aruco_detection():
+            self.handle_no_detection()
+            self.warn_state_limited(
+                "Waiting for recent ArUco target pose before YOLO "
+                "bbox/publish."
+            )
+            self.show_debug_image(annotated)
+            return
 
         try:
             results = self.model(
@@ -298,7 +368,18 @@ class ZedYoloNode(Node):
 
         if raw_distance_m is None:
             self.handle_no_detection()
-            self.draw_detection(annotated, x1, y1, x2, y2, rx1, ry1, rx2, ry2, None)
+            self.draw_detection(
+                annotated,
+                x1,
+                y1,
+                x2,
+                y2,
+                rx1,
+                ry1,
+                rx2,
+                ry2,
+                None,
+            )
             self.show_debug_image(annotated)
             return
 
@@ -379,6 +460,22 @@ class ZedYoloNode(Node):
     def handle_no_detection(self):
         self.last_cart_target_publish_time = None
 
+    def has_recent_aruco_detection(self):
+        if not self.require_aruco_detection:
+            return True
+
+        if self.last_aruco_detection_time is None:
+            return False
+
+        if self.aruco_detection_timeout_sec <= 0.0:
+            return True
+
+        elapsed_sec = (
+            self.get_clock().now() - self.last_aruco_detection_time
+        ).nanoseconds * 1e-9
+
+        return elapsed_sec <= self.aruco_detection_timeout_sec
+
     def transform_target_point(
         self, rgb_msg: Image, x_cam: float, y_cam: float, z_cam: float
     ):
@@ -422,7 +519,8 @@ class ZedYoloNode(Node):
 
         except TransformException as e:
             self.warn_tf_limited(
-                f"Failed to transform target point from {source_frame} to {self.base_frame}: {e}"
+                f"Failed to transform target point from {source_frame} "
+                f"to {self.base_frame}: {e}"
             )
             return None
 
@@ -457,7 +555,11 @@ class ZedYoloNode(Node):
             f"x={msg.point.x:.3f}, y={msg.point.y:.3f}"
         )
 
-    def publish_target_marker(self, base_msg: PointStamped, ground_msg: PointStamped):
+    def publish_target_marker(
+        self,
+        base_msg: PointStamped,
+        ground_msg: PointStamped,
+    ):
         sphere = Marker()
         sphere.header = base_msg.header
         sphere.ns = "zed_yolo_target"
@@ -609,7 +711,9 @@ class ZedYoloNode(Node):
         dt = abs(rgb_t - depth_t)
 
         if dt > self.max_rgb_depth_dt_sec:
-            self.warn_state_limited(f"RGB/depth timestamp gap too large: {dt:.3f} sec")
+            self.warn_state_limited(
+                f"RGB/depth timestamp gap too large: {dt:.3f} sec"
+            )
             return False
 
         return True
