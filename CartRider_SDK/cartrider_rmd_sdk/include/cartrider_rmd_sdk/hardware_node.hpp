@@ -85,7 +85,7 @@ private:
   std::string can_interface_;
   
   rclcpp::Time last_command_time_;    
-  int command_timeout_ms_{2000};      
+  int command_timeout_ms_{500};      
 
   rclcpp::Time last_reconnect_attempt_; 
   std::vector<std::pair<ControlMode, double>> backup_targets_;

@@ -8,7 +8,7 @@ HardwareNode::HardwareNode() : rclcpp::Node("hardware_node")
   RCLCPP_INFO(this->get_logger(), "Hardware Node Started");
 
   this->declare_parameter("rmd_can_interface", "can0");
-  this->declare_parameter("command_timeout_ms", 2000);
+  this->declare_parameter("command_timeout_ms", 500);
 
   this->declare_parameter("rmd_motor_ids", std::vector<int64_t>{});
   this->declare_parameter("rmd_operate_modes", std::vector<std::string>{});
