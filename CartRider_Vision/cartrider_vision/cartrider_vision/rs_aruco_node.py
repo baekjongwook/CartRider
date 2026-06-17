@@ -5,7 +5,7 @@ import math
 import cv2
 import numpy as np
 import rclpy
-import tf2_geometry_msgs
+import tf2_geometry_msgs  # noqa: F401
 
 from rclpy.node import Node
 from rclpy.duration import Duration
@@ -28,7 +28,9 @@ class RSArucoNode(Node):
         self.bridge = CvBridge()
 
         self.declare_parameter("rgb_topic", "/camera/color/image_raw")
-        self.declare_parameter("depth_topic", "/camera/aligned_depth_to_color/image_raw")
+        self.declare_parameter(
+            "depth_topic", "/camera/aligned_depth_to_color/image_raw"
+        )
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("base_frame", "base_link")
 
@@ -45,6 +47,8 @@ class RSArucoNode(Node):
         self.declare_parameter("depth_min_m", 0.15)
         self.declare_parameter("depth_max_m", 5.0)
         self.declare_parameter("depth_margin_px", 4)
+
+        self.declare_parameter("publish_max_depth_m", 2.0)
 
         self.declare_parameter("robot_marker_id", 4)
 
@@ -90,6 +94,9 @@ class RSArucoNode(Node):
         self.depth_min_m = float(self.get_parameter("depth_min_m").value)
         self.depth_max_m = float(self.get_parameter("depth_max_m").value)
         self.depth_margin_px = int(self.get_parameter("depth_margin_px").value)
+        self.publish_max_depth_m = float(
+            self.get_parameter("publish_max_depth_m").value
+        )
 
         self.robot_marker_id = int(self.get_parameter("robot_marker_id").value)
 
@@ -221,7 +228,10 @@ class RSArucoNode(Node):
         )
         self.get_logger().info(f"Robot marker ID       : {self.robot_marker_id}")
         self.get_logger().info("Detection             : largest ArUco only")
-        self.get_logger().info("Position              : depth first, PnP fallback")
+        self.get_logger().info("Position              : DEPTH only for publish")
+        self.get_logger().info(
+            f"Publish gate          : publish only if depth <= {self.publish_max_depth_m:.3f} m"
+        )
         self.get_logger().info(
             "Target output         : PointStamped x[m], y[m], z=yaw[rad], frame_id=aruco_<id> + Int32 robot=1/cart=2"
         )
@@ -309,14 +319,59 @@ class RSArucoNode(Node):
             return
 
         depth_xyz = self.compute_depth_xyz(depth_m, corners)
-        used_source = "PNP"
 
-        if depth_xyz is not None:
-            final_xyz = depth_xyz
-            used_source = "DEPTH"
-        else:
-            final_xyz = pnp_xyz
-            used_source = "PNP"
+        # 핵심 수정 1:
+        # depth가 안 잡히면 PnP로 대체해서 publish하지 않음.
+        if depth_xyz is None:
+            self.draw_marker(annotated, corners, marker_id)
+            self.draw_status(
+                annotated,
+                "Depth invalid: target not published",
+                bad=True,
+            )
+            self.draw_pose_text(
+                annotated,
+                marker_id,
+                mode,
+                Pose2D(),
+                raw_yaw_deg,
+                output_yaw_deg,
+                marker_length_m,
+                pnp_xyz,
+                None,
+                "NOT_PUBLISHED",
+            )
+            self.show(annotated)
+            return
+
+        depth_distance_m = float(depth_xyz[2])
+
+        # 핵심 수정 2:
+        # depth 거리가 publish_max_depth_m 초과면 /target_pose, /target_type publish 안 함.
+        if depth_distance_m > self.publish_max_depth_m:
+            self.draw_marker(annotated, corners, marker_id)
+            self.draw_status(
+                annotated,
+                f"Too far: {depth_distance_m:.2f} m > {self.publish_max_depth_m:.2f} m, not published",
+                bad=True,
+            )
+            self.draw_pose_text(
+                annotated,
+                marker_id,
+                mode,
+                Pose2D(),
+                raw_yaw_deg,
+                output_yaw_deg,
+                marker_length_m,
+                pnp_xyz,
+                depth_xyz,
+                "TOO_FAR",
+            )
+            self.show(annotated)
+            return
+
+        final_xyz = depth_xyz
+        used_source = "DEPTH"
 
         x_cam, y_cam, z_cam = final_xyz
 
@@ -355,7 +410,6 @@ class RSArucoNode(Node):
             pose.theta = math.radians(float(output_yaw_deg))
 
         self.publish_target_pose(pose, mode, marker_id, rgb_msg.header.stamp)
-
         self.publish_target_marker(pose, mode)
 
         self.draw_marker(annotated, corners, marker_id)
