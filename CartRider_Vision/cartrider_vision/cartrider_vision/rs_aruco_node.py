@@ -5,7 +5,7 @@ import math
 import cv2
 import numpy as np
 import rclpy
-import tf2_geometry_msgs  # noqa: F401
+import tf2_geometry_msgs
 
 from rclpy.node import Node
 from rclpy.duration import Duration
@@ -38,6 +38,10 @@ class RSArucoNode(Node):
         self.declare_parameter("target_type_topic", "/target_type")
         self.declare_parameter("marker_topic", "/target_marker")
 
+        self.declare_parameter("global_cart_target_topic", "global_cart_target")
+        self.declare_parameter("nav_publish_max_depth_m", 2.0)
+        self.declare_parameter("nav_stable_duration_sec", 0.5)
+
         self.declare_parameter("show_window", True)
         self.declare_parameter("window_name", "RS ArUco Docking Pose")
 
@@ -47,8 +51,6 @@ class RSArucoNode(Node):
         self.declare_parameter("depth_min_m", 0.15)
         self.declare_parameter("depth_max_m", 5.0)
         self.declare_parameter("depth_margin_px", 4)
-
-        self.declare_parameter("publish_max_depth_m", 2.0)
 
         self.declare_parameter("robot_marker_id", 4)
 
@@ -81,6 +83,16 @@ class RSArucoNode(Node):
         self.target_type_topic = self.get_parameter("target_type_topic").value
         self.marker_topic = self.get_parameter("marker_topic").value
 
+        self.global_cart_target_topic = self.get_parameter(
+            "global_cart_target_topic"
+        ).value
+        self.nav_publish_max_depth_m = float(
+            self.get_parameter("nav_publish_max_depth_m").value
+        )
+        self.nav_stable_duration_sec = float(
+            self.get_parameter("nav_stable_duration_sec").value
+        )
+
         self.show_window = bool(self.get_parameter("show_window").value)
         self.window_name = self.get_parameter("window_name").value
 
@@ -94,9 +106,6 @@ class RSArucoNode(Node):
         self.depth_min_m = float(self.get_parameter("depth_min_m").value)
         self.depth_max_m = float(self.get_parameter("depth_max_m").value)
         self.depth_margin_px = int(self.get_parameter("depth_margin_px").value)
-        self.publish_max_depth_m = float(
-            self.get_parameter("publish_max_depth_m").value
-        )
 
         self.robot_marker_id = int(self.get_parameter("robot_marker_id").value)
 
@@ -144,6 +153,9 @@ class RSArucoNode(Node):
         self.dist_coeffs = None
         self.camera_info_ok = False
         self.last_tf_warn_time = None
+
+        self.nav_cart_seen_start_time = None
+        self.nav_last_seen_marker_id = None
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -197,6 +209,12 @@ class RSArucoNode(Node):
             10,
         )
 
+        self.global_cart_target_pub = self.create_publisher(
+            PointStamped,
+            self.global_cart_target_topic,
+            10,
+        )
+
         self.target_type_pub = self.create_publisher(
             Int32,
             self.target_type_topic,
@@ -219,6 +237,9 @@ class RSArucoNode(Node):
         self.get_logger().info(f"Base frame            : {self.base_frame}")
         self.get_logger().info(f"Target pose topic     : {self.target_pose_topic}")
         self.get_logger().info(f"Target type topic     : {self.target_type_topic}")
+        self.get_logger().info(
+            f"Global cart topic     : {self.global_cart_target_topic}"
+        )
         self.get_logger().info(f"Marker topic          : {self.marker_topic}")
         self.get_logger().info(
             f"Cart marker length    : {self.cart_marker_length_m:.3f} m"
@@ -228,9 +249,9 @@ class RSArucoNode(Node):
         )
         self.get_logger().info(f"Robot marker ID       : {self.robot_marker_id}")
         self.get_logger().info("Detection             : largest ArUco only")
-        self.get_logger().info("Position              : DEPTH only for publish")
+        self.get_logger().info("Position              : depth first, PnP fallback")
         self.get_logger().info(
-            f"Publish gate          : publish only if depth <= {self.publish_max_depth_m:.3f} m"
+            f"Nav output            : cart only, depth <= {self.nav_publish_max_depth_m:.2f} m, stable >= {self.nav_stable_duration_sec:.2f} sec"
         )
         self.get_logger().info(
             "Target output         : PointStamped x[m], y[m], z=yaw[rad], frame_id=aruco_<id> + Int32 robot=1/cart=2"
@@ -282,6 +303,7 @@ class RSArucoNode(Node):
         marker = self.detect_largest_aruco(frame)
 
         if marker is None:
+            self.reset_nav_cart_stability()
             self.draw_status(annotated, "ArUco: not detected", bad=True)
             self.show(annotated)
             return
@@ -291,6 +313,7 @@ class RSArucoNode(Node):
         marker_length_m = self.get_marker_length_m(marker_id)
 
         if marker_length_m is None:
+            self.reset_nav_cart_stability()
             self.draw_marker(annotated, corners, marker_id)
             self.draw_status(annotated, f"Unknown marker id: {marker_id}", bad=True)
             self.show(annotated)
@@ -302,6 +325,7 @@ class RSArucoNode(Node):
         )
 
         if marker_yaw_deg is None or pnp_xyz is None:
+            self.reset_nav_cart_stability()
             self.draw_marker(annotated, corners, marker_id)
             self.draw_status(annotated, "PnP failed", bad=True)
             self.show(annotated)
@@ -313,65 +337,21 @@ class RSArucoNode(Node):
         )
 
         if mode is None:
+            self.reset_nav_cart_stability()
             self.draw_marker(annotated, corners, marker_id)
             self.draw_status(annotated, f"Unknown marker id: {marker_id}", bad=True)
             self.show(annotated)
             return
 
         depth_xyz = self.compute_depth_xyz(depth_m, corners)
+        used_source = "PNP"
 
-        # 핵심 수정 1:
-        # depth가 안 잡히면 PnP로 대체해서 publish하지 않음.
-        if depth_xyz is None:
-            self.draw_marker(annotated, corners, marker_id)
-            self.draw_status(
-                annotated,
-                "Depth invalid: target not published",
-                bad=True,
-            )
-            self.draw_pose_text(
-                annotated,
-                marker_id,
-                mode,
-                Pose2D(),
-                raw_yaw_deg,
-                output_yaw_deg,
-                marker_length_m,
-                pnp_xyz,
-                None,
-                "NOT_PUBLISHED",
-            )
-            self.show(annotated)
-            return
-
-        depth_distance_m = float(depth_xyz[2])
-
-        # 핵심 수정 2:
-        # depth 거리가 publish_max_depth_m 초과면 /target_pose, /target_type publish 안 함.
-        if depth_distance_m > self.publish_max_depth_m:
-            self.draw_marker(annotated, corners, marker_id)
-            self.draw_status(
-                annotated,
-                f"Too far: {depth_distance_m:.2f} m > {self.publish_max_depth_m:.2f} m, not published",
-                bad=True,
-            )
-            self.draw_pose_text(
-                annotated,
-                marker_id,
-                mode,
-                Pose2D(),
-                raw_yaw_deg,
-                output_yaw_deg,
-                marker_length_m,
-                pnp_xyz,
-                depth_xyz,
-                "TOO_FAR",
-            )
-            self.show(annotated)
-            return
-
-        final_xyz = depth_xyz
-        used_source = "DEPTH"
+        if depth_xyz is not None:
+            final_xyz = depth_xyz
+            used_source = "DEPTH"
+        else:
+            final_xyz = pnp_xyz
+            used_source = "PNP"
 
         x_cam, y_cam, z_cam = final_xyz
 
@@ -383,6 +363,7 @@ class RSArucoNode(Node):
         )
 
         if marker_base is None:
+            self.reset_nav_cart_stability()
             self.draw_marker(annotated, corners, marker_id)
             self.draw_status(annotated, "TF failed", bad=True)
             self.show(annotated)
@@ -410,6 +391,19 @@ class RSArucoNode(Node):
             pose.theta = math.radians(float(output_yaw_deg))
 
         self.publish_target_pose(pose, mode, marker_id, rgb_msg.header.stamp)
+
+        nav_depth_distance_m = None
+        if depth_xyz is not None:
+            nav_depth_distance_m = float(depth_xyz[2])
+
+        self.update_and_publish_nav_cart_target(
+            pose,
+            mode,
+            marker_id,
+            rgb_msg.header.stamp,
+            nav_depth_distance_m,
+        )
+
         self.publish_target_marker(pose, mode)
 
         self.draw_marker(annotated, corners, marker_id)
@@ -460,6 +454,58 @@ class RSArucoNode(Node):
         corners_full = corners[best_idx].reshape(4, 2).astype(np.float32)
 
         return marker_id, corners_full
+
+    def reset_nav_cart_stability(self):
+        self.nav_cart_seen_start_time = None
+        self.nav_last_seen_marker_id = None
+
+    def update_and_publish_nav_cart_target(
+        self,
+        pose: Pose2D,
+        mode: str,
+        marker_id: int,
+        stamp,
+        depth_distance_m,
+    ):
+        if mode != "cart":
+            self.reset_nav_cart_stability()
+            return
+
+        if depth_distance_m is None:
+            self.reset_nav_cart_stability()
+            return
+
+        if depth_distance_m > self.nav_publish_max_depth_m:
+            self.reset_nav_cart_stability()
+            return
+
+        now = self.get_clock().now()
+
+        if self.nav_last_seen_marker_id != int(marker_id):
+            self.nav_last_seen_marker_id = int(marker_id)
+            self.nav_cart_seen_start_time = now
+            return
+
+        if self.nav_cart_seen_start_time is None:
+            self.nav_cart_seen_start_time = now
+            return
+
+        stable_sec = (now - self.nav_cart_seen_start_time).nanoseconds * 1e-9
+
+        if stable_sec < self.nav_stable_duration_sec:
+            return
+
+        self.publish_global_cart_target(pose, marker_id, stamp)
+
+    def publish_global_cart_target(self, pose: Pose2D, marker_id: int, stamp):
+        msg = PointStamped()
+        msg.header.stamp = stamp
+        msg.header.frame_id = f"aruco_{int(marker_id)}"
+        msg.point.x = float(pose.x)
+        msg.point.y = float(pose.y)
+        msg.point.z = float(pose.theta)
+
+        self.global_cart_target_pub.publish(msg)
 
     def publish_target_pose(self, pose: Pose2D, mode: str, marker_id: int, stamp):
         target_msg = PointStamped()
