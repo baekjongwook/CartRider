@@ -77,7 +77,7 @@ namespace vehicle_kinematics
                 out.rear_left_w = linear_vel / rear_wheel_radius_;
                 out.rear_right_w = linear_vel / rear_wheel_radius_;
 
-                applyRearPushBias(
+                applyRearCompressionBias(
                     linear_vel,
                     out.rear_left_w,
                     out.rear_right_w);
@@ -115,7 +115,7 @@ namespace vehicle_kinematics
             out.rear_left_w = v_rl / rear_wheel_radius_;
             out.rear_right_w = v_rr / rear_wheel_radius_;
 
-            applyRearPushBias(
+            applyRearCompressionBias(
                 linear_vel,
                 out.rear_left_w,
                 out.rear_right_w);
@@ -143,18 +143,23 @@ namespace vehicle_kinematics
             }
         }
 
-        static void applyRearPushBias(
+        static void applyRearCompressionBias(
             double linear_vel,
             double &rear_left_w,
             double &rear_right_w)
         {
-            constexpr double kRearPushGain = 1.10;
-            constexpr double kRearPushMinLinearVel = 0.05;
+            constexpr double kCompressionBias = 0.10;
+            constexpr double kCompressionMinLinearVel = 0.05;
 
-            if (std::abs(linear_vel) > kRearPushMinLinearVel)
+            if (linear_vel > kCompressionMinLinearVel)
             {
-                rear_left_w *= kRearPushGain;
-                rear_right_w *= kRearPushGain;
+                rear_left_w *= (1.0 + kCompressionBias);
+                rear_right_w *= (1.0 + kCompressionBias);
+            }
+            else if (linear_vel < -kCompressionMinLinearVel)
+            {
+                rear_left_w *= (1.0 - kCompressionBias);
+                rear_right_w *= (1.0 - kCompressionBias);
             }
         }
 
