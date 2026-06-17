@@ -39,8 +39,7 @@ class RSArucoNode(Node):
         self.declare_parameter("marker_topic", "/target_marker")
 
         self.declare_parameter("global_cart_target_topic", "global_cart_target")
-        self.declare_parameter("nav_publish_max_depth_m", 2.0)
-        self.declare_parameter("nav_stable_duration_sec", 0.5)
+        self.declare_parameter("nav_stable_duration_sec", 1.0)
 
         self.declare_parameter("show_window", True)
         self.declare_parameter("window_name", "RS ArUco Docking Pose")
@@ -86,9 +85,6 @@ class RSArucoNode(Node):
         self.global_cart_target_topic = self.get_parameter(
             "global_cart_target_topic"
         ).value
-        self.nav_publish_max_depth_m = float(
-            self.get_parameter("nav_publish_max_depth_m").value
-        )
         self.nav_stable_duration_sec = float(
             self.get_parameter("nav_stable_duration_sec").value
         )
@@ -251,7 +247,7 @@ class RSArucoNode(Node):
         self.get_logger().info("Detection             : largest ArUco only")
         self.get_logger().info("Position              : depth first, PnP fallback")
         self.get_logger().info(
-            f"Nav output            : cart only, depth <= {self.nav_publish_max_depth_m:.2f} m, stable >= {self.nav_stable_duration_sec:.2f} sec"
+            f"Nav output            : cart only, stable >= {self.nav_stable_duration_sec:.2f} sec"
         )
         self.get_logger().info(
             "Target output         : PointStamped x[m], y[m], z=yaw[rad], frame_id=aruco_<id> + Int32 robot=1/cart=2"
@@ -392,16 +388,11 @@ class RSArucoNode(Node):
 
         self.publish_target_pose(pose, mode, marker_id, rgb_msg.header.stamp)
 
-        nav_depth_distance_m = None
-        if depth_xyz is not None:
-            nav_depth_distance_m = float(depth_xyz[2])
-
         self.update_and_publish_nav_cart_target(
             pose,
             mode,
             marker_id,
             rgb_msg.header.stamp,
-            nav_depth_distance_m,
         )
 
         self.publish_target_marker(pose, mode)
@@ -465,17 +456,8 @@ class RSArucoNode(Node):
         mode: str,
         marker_id: int,
         stamp,
-        depth_distance_m,
     ):
         if mode != "cart":
-            self.reset_nav_cart_stability()
-            return
-
-        if depth_distance_m is None:
-            self.reset_nav_cart_stability()
-            return
-
-        if depth_distance_m > self.nav_publish_max_depth_m:
             self.reset_nav_cart_stability()
             return
 

@@ -153,8 +153,7 @@ def generate_launch_description():
                 "target_type_topic": "target_type",
                 "marker_topic": "marker",
                 "global_cart_target_topic": "global_cart_target",
-                "nav_publish_max_depth_m": 2.0,
-                "nav_stable_duration_sec": 0.5,
+                "nav_stable_duration_sec": 1.0,
                 "show_window": ParameterValue(
                     LaunchConfiguration("show_window"),
                     value_type=bool,
