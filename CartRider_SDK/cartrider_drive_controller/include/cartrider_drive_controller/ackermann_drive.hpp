@@ -77,6 +77,11 @@ namespace vehicle_kinematics
                 out.rear_left_w = linear_vel / rear_wheel_radius_;
                 out.rear_right_w = linear_vel / rear_wheel_radius_;
 
+                applyRearPushBias(
+                    linear_vel,
+                    out.rear_left_w,
+                    out.rear_right_w);
+
                 return out;
             }
 
@@ -110,6 +115,11 @@ namespace vehicle_kinematics
             out.rear_left_w = v_rl / rear_wheel_radius_;
             out.rear_right_w = v_rr / rear_wheel_radius_;
 
+            applyRearPushBias(
+                linear_vel,
+                out.rear_left_w,
+                out.rear_right_w);
+
             return out;
         }
 
@@ -130,6 +140,21 @@ namespace vehicle_kinematics
             {
                 steer += kPi;
                 wheel_linear_speed = -wheel_linear_speed;
+            }
+        }
+
+        static void applyRearPushBias(
+            double linear_vel,
+            double &rear_left_w,
+            double &rear_right_w)
+        {
+            constexpr double kRearPushGain = 1.10;
+            constexpr double kRearPushMinLinearVel = 0.05;
+
+            if (std::abs(linear_vel) > kRearPushMinLinearVel)
+            {
+                rear_left_w *= kRearPushGain;
+                rear_right_w *= kRearPushGain;
             }
         }
 
