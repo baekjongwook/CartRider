@@ -253,11 +253,11 @@ def generate_launch_description():
             DeclareLaunchArgument("yaw_snap_zero_max_deg", default_value="5.0"),
             DeclareLaunchArgument("yaw_snap_180_min_deg", default_value="175.0"),
             DeclareLaunchArgument("yaw_snap_180_max_deg", default_value="180.0"),
-            zed_camera,
+            #zed_camera,
             realsense,
             base_to_rs_tf,
             rs_aruco_node,
-            base_to_zed_tf,
-            zed_yolo_node,
+            #base_to_zed_tf,
+            #zed_yolo_node,
         ]
     )

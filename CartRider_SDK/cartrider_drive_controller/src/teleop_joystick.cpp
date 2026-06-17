@@ -4,16 +4,23 @@
 // button 1: /front/home true
 // button 2: /front/cart_docking true
 // button 3: /front/robot_docking true
+// button 4: /cart_count 0
+// button 5: /cart_count 2
+// axes[scenario_sequence_axis_index] ==  1: /start_patrol_mission 1
+// axes[scenario_sequence_axis_index] == -1: /start_patrol_mission 2
 // button 9: /gripper_toggle toggle
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/u_int16.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <cstdint>
 
 class Teleop : public rclcpp::Node
 {
@@ -59,6 +66,14 @@ public:
             "/gripper_toggle",
             10);
 
+        cart_count_pub_ = this->create_publisher<std_msgs::msg::UInt16>(
+            "/cart_count",
+            10);
+
+        start_patrol_mission_pub_ = this->create_publisher<std_msgs::msg::Int32>(
+            "/start_patrol_mission",
+            10);
+
         docking_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/docking_state",
             10,
@@ -101,6 +116,14 @@ public:
         robot_docking_button_index_ =
             this->declare_parameter<int>("robot_docking_button_index", 3);
 
+        cart_count_zero_button_index_ =
+            this->declare_parameter<int>("cart_count_zero_button_index", 4);
+        cart_count_two_button_index_ =
+            this->declare_parameter<int>("cart_count_two_button_index", 5);
+
+        scenario_sequence_axis_index_ =
+            this->declare_parameter<int>("scenario_sequence_axis_index", 6);
+
         gripper_toggle_button_index_ =
             this->declare_parameter<int>("gripper_toggle_button_index", 9);
 
@@ -121,6 +144,17 @@ public:
 
         RCLCPP_INFO(
             this->get_logger(),
+            "Cart count buttons: zero=%d two=%d",
+            cart_count_zero_button_index_,
+            cart_count_two_button_index_);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Scenario sequence axis: axis[%d]",
+            scenario_sequence_axis_index_);
+
+        RCLCPP_INFO(
+            this->get_logger(),
             "Dynamixel gripper toggle button: %d",
             gripper_toggle_button_index_);
     }
@@ -137,6 +171,9 @@ private:
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr robot_docking_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr gripper_toggle_pub_;
 
+    rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr cart_count_pub_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr start_patrol_mission_pub_;
+
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr docking_state_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
 
@@ -150,6 +187,11 @@ private:
     bool home_btn_once_{true};
     bool cart_docking_btn_once_{true};
     bool robot_docking_btn_once_{true};
+
+    bool cart_count_zero_btn_once_{true};
+    bool cart_count_two_btn_once_{true};
+
+    bool scenario_sequence_axis_once_{true};
 
     bool gripper_toggle_btn_once_{true};
     bool gripper_toggle_state_{false};
@@ -174,6 +216,12 @@ private:
     int home_button_index_{1};
     int cart_docking_button_index_{2};
     int robot_docking_button_index_{3};
+
+    int cart_count_zero_button_index_{4};
+    int cart_count_two_button_index_{5};
+
+    int scenario_sequence_axis_index_{6};
+
     int gripper_toggle_button_index_{9};
 
 private:
@@ -210,6 +258,18 @@ private:
         return msg->buttons[index];
     }
 
+    double getAxis(
+        const sensor_msgs::msg::Joy::SharedPtr msg,
+        int index) const
+    {
+        if (index < 0 || index >= static_cast<int>(msg->axes.size()))
+        {
+            return 0.0;
+        }
+
+        return msg->axes[index];
+    }
+
     void publishJoyMode()
     {
         std_msgs::msg::Bool msg;
@@ -237,6 +297,32 @@ private:
             this->get_logger(),
             "mightyZAP manual command published: %s",
             name.c_str());
+    }
+
+    void publishCartCount(uint16_t count, const std::string &reason)
+    {
+        std_msgs::msg::UInt16 msg;
+        msg.data = count;
+        cart_count_pub_->publish(msg);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Cart count published: %u (%s)",
+            static_cast<unsigned int>(count),
+            reason.c_str());
+    }
+
+    void publishStartPatrolMission(int32_t mission_id, const std::string &reason)
+    {
+        std_msgs::msg::Int32 msg;
+        msg.data = mission_id;
+        start_patrol_mission_pub_->publish(msg);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Start patrol mission published: %d (%s)",
+            mission_id,
+            reason.c_str());
     }
 
     void publishGripperToggleState()
@@ -402,6 +488,52 @@ private:
         }
     }
 
+    void handleCartCountButtons(const sensor_msgs::msg::Joy::SharedPtr msg)
+    {
+        const int button_zero = getButton(msg, cart_count_zero_button_index_);
+        const int button_two = getButton(msg, cart_count_two_button_index_);
+
+        if (button_zero == 1 && cart_count_zero_btn_once_)
+        {
+            publishCartCount(0, "button_zero");
+            cart_count_zero_btn_once_ = false;
+        }
+        else if (button_zero == 0)
+        {
+            cart_count_zero_btn_once_ = true;
+        }
+
+        if (button_two == 1 && cart_count_two_btn_once_)
+        {
+            publishCartCount(2, "button_two");
+            cart_count_two_btn_once_ = false;
+        }
+        else if (button_two == 0)
+        {
+            cart_count_two_btn_once_ = true;
+        }
+    }
+
+    void handleScenarioSequenceAxis(const sensor_msgs::msg::Joy::SharedPtr msg)
+    {
+        const double axis_value = getAxis(msg, scenario_sequence_axis_index_);
+
+        if (axis_value > 0.9 && scenario_sequence_axis_once_)
+        {
+            publishStartPatrolMission(1, "scenario_sequence_1");
+            scenario_sequence_axis_once_ = false;
+        }
+        else if (axis_value < -0.9 && scenario_sequence_axis_once_)
+        {
+            publishStartPatrolMission(2, "scenario_sequence_2");
+            scenario_sequence_axis_once_ = false;
+        }
+        else if (std::abs(axis_value) < 0.1)
+        {
+            scenario_sequence_axis_once_ = true;
+        }
+    }
+
     void handleGripperToggleButton(const sensor_msgs::msg::Joy::SharedPtr msg)
     {
         const int button_gripper = getButton(msg, gripper_toggle_button_index_);
@@ -425,6 +557,8 @@ private:
         bool is_zero = false;
 
         handleMightyZapButtons(msg);
+        handleCartCountButtons(msg);
+        handleScenarioSequenceAxis(msg);
         handleGripperToggleButton(msg);
 
         const int button_x = getButton(msg, x_button_index_);

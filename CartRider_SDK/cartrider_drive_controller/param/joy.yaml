@@ -6,7 +6,7 @@ joy_node:
 teleop_joystick:
   ros__parameters:
     rearbot_cmd_vel_max_lin: 0.2
-    rearbot_cmd_vel_max_ang: 1.0 
+    rearbot_cmd_vel_max_ang: 1.0
 
     frontbot_cmd_vel_max_lin: 0.2
     frontbot_cmd_vel_max_ang: 1.0
@@ -23,5 +23,10 @@ teleop_joystick:
     home_button_index: 1
     cart_docking_button_index: 2
     robot_docking_button_index: 3
+
+    cart_count_zero_button_index: 4
+    cart_count_two_button_index: 5
+
+    scenario_sequence_axis_index: 6
 
     gripper_toggle_button_index: 9
