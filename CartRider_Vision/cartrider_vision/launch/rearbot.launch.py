@@ -28,10 +28,10 @@ def generate_launch_description():
 
     zed_param_overrides = (
         "general.grab_resolution:=VGA;"
-        "general.grab_frame_rate:=10;"
+        "general.grab_frame_rate:=3;"
         "general.pub_resolution:=CUSTOM;"
         "general.pub_downscale_factor:=3.0;"
-        "general.pub_frame_rate:=10.0;"
+        "general.pub_frame_rate:=3.0;"
         "general.self_calib:=false;"
         "general.publish_status:=false;"
         "video.publish_rgb:=true;"
@@ -50,7 +50,7 @@ def generate_launch_description():
         "depth.publish_depth_confidence:=false;"
         "depth.publish_disparity:=false;"
         "sensors.publish_imu_tf:=false;"
-        "sensors.sensors_pub_rate:=10.0;"
+        "sensors.sensors_pub_rate:=3.0;"
         "sensors.publish_imu:=false;"
         "sensors.publish_imu_raw:=false;"
         "sensors.publish_cam_imu_transf:=false;"
